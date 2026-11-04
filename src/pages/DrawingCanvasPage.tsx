@@ -1,0 +1,8 @@
+/**
+ * 앱에서 그리기 화면을 담당한다.
+ *
+ * @returns 페이지 요소 또는 화면 구현 전 null
+ */
+export const DrawingCanvasPage = () => {
+  return null
+}

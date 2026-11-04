@@ -1,0 +1,41 @@
+.wrapper {
+  width: 100%;
+}
+
+.label {
+  display: block;
+  margin-bottom: 12px;
+  padding-left: 12px;
+  font-size: var(--font-size-body);
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.textarea {
+  display: block;
+  width: 100%;
+  padding: var(--control-padding-block) var(--control-padding-inline);
+  resize: none;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-surface-gray);
+  color: var(--color-black);
+  font: inherit;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+}
+
+.textarea::placeholder {
+  color: var(--color-gray);
+  opacity: 1;
+}
+
+.textarea:focus-visible {
+  outline: 2px solid var(--color-black);
+  outline-offset: 2px;
+}
+
+.textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

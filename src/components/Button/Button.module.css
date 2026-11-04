@@ -1,0 +1,33 @@
+.button {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--control-padding-block) 16px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-size: var(--font-size-choice);
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+
+.green {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.gray {
+  background: var(--color-surface-gray);
+  color: var(--color-black);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--color-black);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
