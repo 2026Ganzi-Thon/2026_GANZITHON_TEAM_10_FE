@@ -86,7 +86,7 @@ const Progress = ({ step }: { step: number }) => (
  * `page` 쿼리의 1~5는 최초 진입 단계이며, 다른 값은 1단계로 처리한다.
  * 개발 환경의 `preview` 쿼리는 임시 선택지를 사용하고 서버 저장 없이 그림 안내 화면으로 이동한다.
  * 일반 모드에서는 선택지와 기존 답변을 조회하고 온보딩 답변을 통째로 저장한다.
- * 기존 답변 조회에 실패하면 저장하지 않으며, 중간 단계로 진입해도 필수 고민을 선택하면 저장할 수 있다.
+ * 앞선 필수 답변이 없는 중간 단계 진입은 1단계에서 시작하고, 기존 답변 조회 실패 시 저장하지 않는다.
  *
  * @returns 설문 화면 또는 선택지 로딩·오류 화면
  */
@@ -106,7 +106,7 @@ export const Questionnaire = () => {
   const [loadError, setLoadError] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [birthYear, setBirthYear] = useState('2005')
+  const [birthYear, setBirthYear] = useState('')
   const [gender, setGender] = useState('')
   const [artExperience, setArtExperience] = useState('')
   const [lifeStatus, setLifeStatus] = useState('')
@@ -140,6 +140,24 @@ export const Questionnaire = () => {
           return
         }
         const answers = userResponse.data.data.onboarding
+        if (
+          initialStep > 0 &&
+          (!answers ||
+            !answers.birthYear ||
+            !answers.gender ||
+            !answers.artExperience ||
+            (initialStep > 1 &&
+              (!answers.lifeStatus ||
+                (answers.lifeStatus === 'ETC' && !answers.lifeStatusText?.trim()))) ||
+            (initialStep > 2 &&
+              (!answers.themeCode ||
+                (answers.themeCode === 'DIRECT' && !answers.themeText?.trim()))) ||
+            (initialStep > 3 &&
+              answers.emotions?.includes('DIRECT') &&
+              !answers.emotionText?.trim()))
+        ) {
+          setStep(0)
+        }
         if (answers) {
           const fields = [
             'birthYear',
@@ -177,7 +195,7 @@ export const Questionnaire = () => {
     return () => {
       active = false
     }
-  }, [attempt, isPreview])
+  }, [attempt, initialStep, isPreview])
 
   const selectEmotion = (code: string) => {
     setEmotionsChanged(true)
