@@ -1,0 +1,190 @@
+.container,
+.intro {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 600px;
+  overflow: hidden;
+  background: var(--color-white);
+}
+
+.splash {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  background: var(--color-white);
+  transition: opacity 600ms ease;
+}
+.fade {
+  opacity: 0;
+  pointer-events: none;
+}
+.splash img {
+  position: absolute;
+  height: auto;
+}
+.leftTop {
+  left: 0;
+  top: 0;
+  width: 69%;
+}
+.leftBottom {
+  left: 0;
+  top: 51%;
+  width: 40%;
+}
+.centerBottom {
+  left: 20%;
+  bottom: 4%;
+  width: 72%;
+}
+.rightTop {
+  right: 0;
+  top: 7.5%;
+  width: 30.5%;
+}
+.rightBottom {
+  right: 0;
+  top: 46%;
+  width: 43%;
+}
+.brand {
+  position: absolute;
+  top: 27.8%;
+  width: 100%;
+  text-align: center;
+  font-family: GeuriunYeeun, sans-serif;
+}
+.brand h1 {
+  margin: 0;
+  font-size: 75px;
+  font-weight: 400;
+  line-height: 1.38;
+  letter-spacing: 7.5px;
+}
+.brand p {
+  margin: 11px 0 0;
+  font-size: 15px;
+  letter-spacing: 3px;
+}
+.swiper {
+  height: 80%;
+}
+.slide {
+  height: 100%;
+  text-align: center;
+}
+.art {
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  width: 100%;
+  height: 43%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.art img {
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+}
+.art1 {
+  width: 74%;
+}
+.art2 {
+  width: 68.5%;
+}
+.art3 {
+  width: 88%;
+}
+.art4 {
+  width: 68.5%;
+}
+.copy {
+  position: absolute;
+  top: 68%;
+  width: 100%;
+  padding: 0 16px;
+}
+.copy h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.copy p {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.25;
+}
+.swiper :global(.swiper-pagination) {
+  bottom: 7%;
+}
+.swiper :global(.swiper-pagination-bullet) {
+  width: 9px;
+  height: 9px;
+  margin: 0 4.5px !important;
+  background: var(--color-gray-light);
+  opacity: 1;
+}
+.swiper :global(.swiper-pagination-bullet-active) {
+  background: var(--color-primary);
+}
+.actions {
+  position: absolute;
+  bottom: 5.7%;
+  left: 50%;
+  width: min(304px, calc(100% - 32px));
+  transform: translateX(-50%);
+  display: grid;
+  gap: 7px;
+}
+.actions .guest {
+  justify-self: center;
+  width: auto;
+  padding: 6px 8px;
+  min-height: 36px;
+  background: transparent;
+  color: var(--color-black);
+  font-size: 12px;
+  text-decoration: underline;
+  /* margin-top: -7px; */
+}
+.actions .guest:hover {
+  background: var(--color-surface-gray);
+}
+.actions .signup {
+  opacity: 1;
+}
+.actions button {
+  font-size: 18px;
+  font-weight: 500;
+}
+@media (max-height: 900px) {
+  .container {
+    overflow-y: auto;
+  }
+  .intro {
+    height: max(650px, 100%);
+  }
+  .swiper {
+    height: calc(100% - 170px);
+  }
+  .copy {
+    top: 60%;
+  }
+  .swiper :global(.swiper-pagination) {
+    bottom: 3%;
+  }
+  .actions {
+    bottom: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash {
+    transition-duration: 1ms;
+  }
+}
