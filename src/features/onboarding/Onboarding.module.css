@@ -163,6 +163,26 @@
   font-size: 18px;
   font-weight: 500;
 }
+@media (max-height: 900px) {
+  .container {
+    overflow-y: auto;
+  }
+  .intro {
+    height: max(650px, 100%);
+  }
+  .swiper {
+    height: calc(100% - 170px);
+  }
+  .copy {
+    top: 60%;
+  }
+  .swiper :global(.swiper-pagination) {
+    bottom: 3%;
+  }
+  .actions {
+    bottom: 20px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .splash {
     transition-duration: 1ms;

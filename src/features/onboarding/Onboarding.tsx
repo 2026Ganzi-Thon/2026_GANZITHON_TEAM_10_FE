@@ -62,29 +62,50 @@ const slides = [
   },
 ]
 
-/** 시작 화면을 2초간 보여준 뒤 자동으로 회전하는 소개 화면을 표시한다. */
+/** 모션 설정에 따라 시작 화면과 소개 슬라이드를 표시한다. */
 export const Onboarding = () => {
   const navigate = useNavigate()
-  const [phase, setPhase] = useState<'splash' | 'fade' | 'intro'>('splash')
+  const [reducedMotion, setReducedMotion] = useState(
+    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
+  const [phase, setPhase] = useState<'splash' | 'fade' | 'intro'>(
+    reducedMotion ? 'intro' : 'splash',
+  )
 
   useEffect(() => {
-    const fade = window.setTimeout(() => setPhase('fade'), 2000)
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = (event: MediaQueryListEvent) => {
+      setReducedMotion(event.matches)
+      if (event.matches) setPhase('intro')
+    }
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [])
+
+  useEffect(() => {
+    if (reducedMotion) return
+    const fade = window.setTimeout(
+      () => setPhase((current) => (current === 'splash' ? 'fade' : current)),
+      2000,
+    )
     const intro = window.setTimeout(() => setPhase('intro'), 2600)
     return () => {
       window.clearTimeout(fade)
       window.clearTimeout(intro)
     }
-  }, [])
+  }, [reducedMotion])
 
   return (
     <div className={styles.container}>
       {phase !== 'splash' && (
         <section className={styles.intro} aria-label="서비스 소개">
           <Swiper
+            key={String(reducedMotion)}
             className={styles.swiper}
             modules={[Autoplay, Pagination, A11y]}
             loop
-            autoplay={{ delay: 4000, disableOnInteraction: false }}
+            autoplay={reducedMotion ? false : { delay: 4000, disableOnInteraction: false }}
+            speed={reducedMotion ? 0 : 300}
             pagination={{ clickable: true }}
             aria-label="온보딩 슬라이드"
           >
