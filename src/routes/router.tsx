@@ -28,6 +28,7 @@ export const router = createBrowserRouter([
     element: <RootLayout />,
     children: [
       { path: '/', element: <StartPage /> },
+      { path: '/login', element: null },
       { path: '/onboarding/profile', element: <OnboardingProfilePage /> },
       { path: '/onboarding/lifestyle', element: <OnboardingLifestylePage /> },
       { path: '/onboarding/concerns', element: <OnboardingConcernsPage /> },
