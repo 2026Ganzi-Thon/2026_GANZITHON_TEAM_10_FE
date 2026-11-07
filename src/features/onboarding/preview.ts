@@ -1,0 +1,42 @@
+/** API 명세를 기준으로 한 개발용 설문 선택지다. */
+export const previewOptions = {
+  themes: [
+    { code: 'STUDY_CAREER', label: '학업·진로·일' },
+    { code: 'LOVE', label: '연애·이별' },
+    { code: 'RELATION_FAMILY', label: '인간관계·가족' },
+    { code: 'SELF_HEALTH', label: '나 자신·건강' },
+    { code: 'DAILY_FUTURE', label: '일상·미래' },
+    { code: 'MONEY', label: '경제·금전' },
+    { code: 'UNSURE', label: '잘 모르겠어요' },
+    { code: 'DIRECT', label: '기타 (직접 입력)' },
+  ],
+  emotions: [
+    { code: 'ANXIOUS', label: '불안해요' },
+    { code: 'LONELY', label: '외로워요' },
+    { code: 'STUCK', label: '답답해요' },
+    { code: 'ANNOYED', label: '짜증나요' },
+    { code: 'TIRED', label: '무기력해요' },
+    { code: 'JOY', label: '기뻐요' },
+    { code: 'CALM', label: '편안해요' },
+    { code: 'COMPLEX', label: '복잡한 감정' },
+    { code: 'UNSURE', label: '잘 모르겠어요' },
+    { code: 'DIRECT', label: '직접 말할래요' },
+  ],
+  lifeStatuses: [
+    { code: 'STUDENT', label: '대학생' },
+    { code: 'GRAD_STUDENT', label: '대학원생' },
+    { code: 'JOB_SEEKER', label: '취업준비생' },
+    { code: 'WORKER', label: '직장인' },
+    { code: 'FREELANCER', label: '프리랜서·자영업자' },
+    { code: 'CAREGIVER', label: '육아·돌봄' },
+    { code: 'ON_LEAVE', label: '휴직·휴식' },
+    { code: 'ETC', label: '기타 (직접 입력)' },
+  ],
+  artExperiences: [
+    { code: 'NONE', label: '경험 없음' },
+    { code: 'LITTLE', label: '경험 적음' },
+    { code: 'OCCASIONAL', label: '가끔 활동' },
+    { code: 'REGULAR', label: '꾸준한 활동' },
+    { code: 'PRO', label: '전문 경험' },
+  ],
+}

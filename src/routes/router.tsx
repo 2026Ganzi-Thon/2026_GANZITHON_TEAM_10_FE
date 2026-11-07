@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { RootLayout } from '@/components'
 import { StartPage } from '@/pages/StartPage'
 import { OnboardingProfilePage } from '@/pages/OnboardingProfilePage'
@@ -9,6 +9,8 @@ import { OnboardingStoryPage } from '@/pages/OnboardingStoryPage'
 import { HomePage } from '@/pages/HomePage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { DrawingPage } from '@/pages/DrawingPage'
+import { DrawingOnboardingFirstPage } from '@/pages/DrawingOnboardingFirstPage'
+import { DrawingOnboardingSecondPage } from '@/pages/DrawingOnboardingSecondPage'
 import { DrawingPaperPage } from '@/pages/DrawingPaperPage'
 import { DrawingCanvasPage } from '@/pages/DrawingCanvasPage'
 import { DrawingUploadPage } from '@/pages/DrawingUploadPage'
@@ -27,7 +29,8 @@ export const router = createBrowserRouter([
   {
     element: <RootLayout />,
     children: [
-      { path: '/', element: <StartPage /> },
+      { path: '/', element: <Navigate to="/onboarding" replace /> },
+      { path: '/onboarding', element: <StartPage /> },
       { path: '/login', element: null },
       { path: '/onboarding/profile', element: <OnboardingProfilePage /> },
       { path: '/onboarding/lifestyle', element: <OnboardingLifestylePage /> },
@@ -37,6 +40,8 @@ export const router = createBrowserRouter([
       { path: '/home', element: <HomePage /> },
       { path: '/notifications', element: <NotificationsPage /> },
       { path: '/drawing', element: <DrawingPage /> },
+      { path: '/drawing/onboarding/1', element: <DrawingOnboardingFirstPage /> },
+      { path: '/drawing/onboarding/2', element: <DrawingOnboardingSecondPage /> },
       { path: '/drawing/paper', element: <DrawingPaperPage /> },
       { path: '/drawing/canvas', element: <DrawingCanvasPage /> },
       { path: '/drawing/upload', element: <DrawingUploadPage /> },
