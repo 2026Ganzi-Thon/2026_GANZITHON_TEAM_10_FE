@@ -142,18 +142,12 @@ export const Questionnaire = () => {
         const answers = userResponse.data.data.onboarding
         if (
           initialStep > 0 &&
-          (!answers ||
-            !answers.birthYear ||
-            !answers.gender ||
-            !answers.artExperience ||
-            (initialStep > 1 &&
-              (!answers.lifeStatus ||
-                (answers.lifeStatus === 'ETC' && !answers.lifeStatusText?.trim()))) ||
+          ((initialStep > 1 && answers?.lifeStatus === 'ETC' && !answers.lifeStatusText?.trim()) ||
             (initialStep > 2 &&
-              (!answers.themeCode ||
+              (!answers?.themeCode ||
                 (answers.themeCode === 'DIRECT' && !answers.themeText?.trim()))) ||
             (initialStep > 3 &&
-              answers.emotions?.includes('DIRECT') &&
+              answers?.emotions?.includes('DIRECT') &&
               !answers.emotionText?.trim()))
         ) {
           setStep(0)
@@ -210,23 +204,51 @@ export const Questionnaire = () => {
 
   const next = async () => {
     setError('')
-    if (step === 0 && !birthYear) return setError('출생연도를 골라주세요.')
-    if (step === 0 && !gender) return setError('성별을 골라주세요.')
-    if (step === 0 && !artExperience) return setError('미술 활동 경험을 골라주세요.')
-    if (step === 1 && !lifeStatus) return setError('선택지를 하나 골라주세요.')
-    if (step === 1 && lifeStatus === 'ETC' && lifeStatusText.trim().length < 3)
+    if (
+      step === 1 &&
+      lifeStatus === 'ETC' &&
+      (lifeStatusText.trim().length < 3 || lifeStatusText.trim().length > 30)
+    )
       return setError('일상을 3~30자로 적어주세요.')
     if (step === 2 && !themeCode) return setError('선택지를 하나 골라주세요.')
-    if (step === 2 && themeCode === 'DIRECT' && themeText.trim().length < 3)
-      return setError('고민을 3자 이상 입력해 주세요.')
-    if (step === 3 && emotions.includes('DIRECT') && emotionText.trim().length < 3)
-      return setError('감정을 3자 이상 입력해 주세요.')
+    if (
+      step === 2 &&
+      themeCode === 'DIRECT' &&
+      (themeText.trim().length < 3 || themeText.trim().length > 30)
+    )
+      return setError('고민을 3~30자로 입력해 주세요.')
+    if (
+      step === 3 &&
+      emotions.includes('DIRECT') &&
+      (emotionText.trim().length < 3 || emotionText.trim().length > 30)
+    )
+      return setError('감정을 3~30자로 입력해 주세요.')
     if (step < 4) return setStep(step + 1)
-    if (isPreview) return navigate('/drawing/onboarding/1')
+    if (
+      lifeStatus === 'ETC' &&
+      (lifeStatusText.trim().length < 3 || lifeStatusText.trim().length > 30)
+    ) {
+      setStep(1)
+      return setError('일상을 3~30자로 적어주세요.')
+    }
     if (!themeCode) {
       setStep(2)
       return setError('선택지를 하나 골라주세요.')
     }
+    if (themeCode === 'DIRECT' && (themeText.trim().length < 3 || themeText.trim().length > 30)) {
+      setStep(2)
+      return setError('고민을 3~30자로 입력해 주세요.')
+    }
+    if (
+      emotions.includes('DIRECT') &&
+      (emotionText.trim().length < 3 || emotionText.trim().length > 30)
+    ) {
+      setStep(3)
+      return setError('감정을 3~30자로 입력해 주세요.')
+    }
+    if (extraStory.trim() && (extraStory.trim().length < 5 || extraStory.trim().length > 100))
+      return setError('추가 이야기를 5~100자로 입력해 주세요.')
+    if (isPreview) return navigate('/drawing/onboarding/1')
     setLoading(true)
     try {
       const response = await apiClient.put<{ success: boolean }>('/users/me/onboarding', {
@@ -299,6 +321,7 @@ export const Questionnaire = () => {
             <Progress step={0} />
             <div className={styles.content}>
               <div className={styles.profile}>
+                <p className={styles.hint}>모든 항목은 선택 사항이에요.</p>
                 <h2 className={styles.birthYearTitle}>나이</h2>
                 <Dropdown
                   id="birth-year"
@@ -341,6 +364,7 @@ export const Questionnaire = () => {
             <div className={styles.content}>
               <>
                 <h1>요즘 어떤 일상을 보내고 계신가요?</h1>
+                <p className={styles.hint}>선택하지 않고 넘어갈 수 있어요.</p>
                 {choices(
                   ordered(options.lifeStatuses, order.lifeStatuses),
                   [lifeStatus],
@@ -417,14 +441,14 @@ export const Questionnaire = () => {
                 <p className={styles.hint}>
                   선택지에 담지 못한 고민이나 요즘 마음에 남는 이야기가 있다면
                   <br />
-                  자유롭게 적어주세요.
+                  5~100자로 자유롭게 적어주세요.
                 </p>
                 <div className={styles.story}>
                   <TextArea
                     id="extra-story"
                     aria-label="추가 이야기"
                     minHeight={199}
-                    maxLength={500}
+                    maxLength={100}
                     placeholder="예) 곧 졸업인데 어떤 일을 하고 싶은지 아직 모르겠어요."
                     value={extraStory}
                     onChange={(e) => setExtraStory(e.target.value)}
