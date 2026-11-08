@@ -1,6 +1,7 @@
 export { Button } from './Button/Button'
 export { Dropdown } from './Dropdown/Dropdown'
 export { Input } from './Input/Input'
+export { PageHeader } from './PageHeader/PageHeader'
 export { Modal } from './Modal/Modal'
 export { SheepProfile } from './SheepProfile/SheepProfile'
 export { TextArea } from './TextArea/TextArea'
