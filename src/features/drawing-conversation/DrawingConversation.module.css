@@ -1,0 +1,468 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-surface-gray);
+}
+
+:where(.page button, .page input) {
+  font: inherit;
+}
+
+.page button:not(:disabled) {
+  cursor: pointer;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 60px;
+  padding: 0 16px;
+  background: var(--color-white);
+}
+
+.back,
+.end {
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.back {
+  min-width: 40px;
+}
+
+.header .end {
+  font-size: var(--font-size-caption);
+}
+
+.drawingHeading {
+  flex: none;
+  margin: 16px 37px 0;
+}
+
+.drawingCard {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 62px;
+  padding: 7px 20px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-surface-green);
+  color: inherit;
+  text-align: left;
+}
+
+.drawingPreview h2,
+.drawingPreview h3,
+.drawingNote p,
+.bubble,
+.feedback p,
+.tip p {
+  margin: 0;
+}
+
+.drawingName {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+
+.drawingTitle {
+  display: grid;
+  min-width: 0;
+}
+
+.drawingChevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-primary);
+  font-size: var(--font-size-caption);
+}
+
+.drawingCard .drawingImage,
+.drawingCard .drawingPlaceholder {
+  flex: none;
+  width: 77px;
+  height: 48px;
+  border-radius: 4px;
+}
+
+.drawingImage {
+  display: block;
+  object-fit: contain;
+  background: var(--color-white);
+}
+
+.drawingPlaceholder {
+  display: grid;
+  place-items: center;
+  background: var(--color-gray-light);
+  font-size: var(--font-size-caption);
+}
+
+.drawingPreview {
+  display: grid;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+
+.drawingPreview h2 {
+  font-weight: 700;
+}
+
+.drawingPreview h3 {
+  font-weight: 600;
+}
+
+.previewImage {
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+}
+
+.previewImage .drawingImage {
+  max-width: 100%;
+  max-height: min(44dvh, 360px);
+  border-radius: 8px;
+  background: transparent;
+}
+
+.previewImage .drawingPlaceholder {
+  width: 100%;
+  min-height: 120px;
+  border-radius: 8px;
+}
+
+.drawingNote {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-surface-green);
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 60px 26px 20px 29px;
+}
+
+.assistant,
+.user {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.assistant > img {
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-white);
+}
+
+.user {
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: min(220px, 80%);
+  margin-top: 10px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--color-white);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.user .bubble {
+  margin-top: 0;
+  background: color-mix(in srgb, var(--color-primary) 50%, transparent);
+}
+
+.feedback {
+  margin: 0 0 12px 48px;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+}
+
+.feedback button {
+  margin-top: 4px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.review {
+  display: grid;
+  gap: 10px;
+  max-width: 220px;
+  margin-left: 48px;
+}
+
+.review button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--color-white);
+  text-align: left;
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+}
+
+.review button > :last-child {
+  margin-left: auto;
+}
+
+.composer {
+  flex: none;
+  padding: 0 26px max(24px, env(safe-area-inset-bottom));
+}
+
+.replyToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0 auto 4px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-surface-green);
+  color: color-mix(in srgb, var(--color-black) 72%, var(--color-primary));
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+}
+
+.replyToggle:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-surface-green), var(--color-primary) 12%);
+}
+
+.quickReplies {
+  display: grid;
+  margin-bottom: 8px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--color-white);
+}
+
+.quickReplies button {
+  display: grid;
+  gap: 2px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-black);
+  text-align: left;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  word-break: keep-all;
+}
+
+.quickReplies button:hover,
+.quickReplies button:focus-visible {
+  background: var(--color-surface-green);
+}
+
+.quickReplies span {
+  color: color-mix(in srgb, var(--color-black) 62%, var(--color-white));
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-white);
+}
+
+.form input {
+  flex: 1;
+  align-self: stretch;
+  min-width: 0;
+  padding-inline: 12px 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--font-size-choice);
+}
+
+.form input::placeholder {
+  font-size: var(--font-size-caption);
+}
+
+.form .send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-black);
+  font-size: 18px;
+}
+
+.form .send svg {
+  box-sizing: content-box;
+  width: 1em;
+  height: 1em;
+  padding: 5px;
+  border-radius: 50%;
+  background: var(--color-surface-gray);
+}
+
+.replyToggle:disabled,
+.form .send:disabled {
+  opacity: 0.45;
+}
+
+.loading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: clamp(8px, 2dvh, 16px);
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(8px, 3dvh, 24px) 37px clamp(8px, 2dvh, 20px) 38px;
+  background: var(--color-white);
+  text-align: center;
+}
+
+.loadingPreview {
+  display: grid;
+  flex: 0 1 auto;
+  place-items: center;
+  width: min(100%, 315px);
+  min-height: 80px;
+  aspect-ratio: 3 / 4;
+  margin-inline: auto;
+  container-type: size;
+}
+
+.loadingDrawing {
+  position: relative;
+  width: min(100%, 75cqh);
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+}
+
+.loadingDrawing > * {
+  width: 100%;
+  height: 100%;
+}
+
+.loadingDrawing .drawingImage {
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .loadingDrawing[data-scanning]:has(> .drawingImage)::after {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      transparent 84%,
+      color-mix(in srgb, var(--color-primary) 32%, transparent) calc(100% - 2px),
+      rgb(255 255 255 / 78%) calc(100% - 2px)
+    );
+    content: '';
+    pointer-events: none;
+    animation: drawingScan 1.6s linear infinite;
+  }
+}
+
+@keyframes drawingScan {
+  from {
+    transform: translateY(-100%);
+  }
+
+  to {
+    transform: translateY(16%);
+  }
+}
+
+.loadingText {
+  flex: none;
+  margin-inline: -26px;
+}
+
+.loadingText h1 {
+  margin: 0 0 8px;
+}
+
+.loading [role='status'] p {
+  margin: 0;
+}
+
+.loadingText .retryButton {
+  width: min(100%, 256px);
+}
+
+.tip {
+  flex: none;
+  min-height: 65px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: var(--color-surface-green);
+  text-align: left;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+}
+
+.tip p:first-child {
+  margin-bottom: 4px;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+@media (max-width: 360px) {
+  .drawingHeading {
+    margin-right: 24px;
+    margin-left: 24px;
+  }
+
+  .drawingCard {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .messages {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
+@media (max-height: 700px) {
+  .messages {
+    padding-top: 24px;
+  }
+}
