@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -74,8 +74,10 @@ export const DrawingConversation = ({
   const startedOnBackdrop = useRef(false)
   const mockFailed = useRef(false)
   const messageList = useRef<HTMLDivElement>(null)
+  const composer = useRef<HTMLDivElement>(null)
   const replyToggle = useRef<HTMLButtonElement>(null)
-  const repliesId = useId()
+  const firstReply = useRef<HTMLButtonElement>(null)
+  const restoreReplyFocus = useRef(false)
   const isAsking = conversation?.status === 'asking'
   const isPending = pending !== null
 
@@ -110,6 +112,26 @@ export const DrawingConversation = ({
     const list = messageList.current
     if (list) list.scrollTop = list.scrollHeight
   }, [conversation, pending, retry, showReplies])
+
+  useLayoutEffect(() => {
+    if (showReplies) {
+      firstReply.current?.focus({ preventScroll: true })
+    } else if (restoreReplyFocus.current) {
+      restoreReplyFocus.current = false
+      replyToggle.current?.focus({ preventScroll: true })
+    }
+  }, [showReplies])
+
+  useEffect(() => {
+    if (!showReplies) return
+
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!composer.current?.contains(event.target as Node)) setShowReplies(false)
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePress)
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePress)
+  }, [showReplies])
 
   const runAction = async (action: ConversationAction) => {
     if (!conversation || request.current) return
@@ -284,33 +306,38 @@ export const DrawingConversation = ({
           {conversation.status !== 'support' && (
             <div
               className={styles.composer}
+              ref={composer}
               onKeyDown={(event) => {
                 if (event.key === 'Escape' && showReplies) {
+                  restoreReplyFocus.current = true
                   setShowReplies(false)
-                  replyToggle.current?.focus()
                 }
               }}
               onBlur={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget)) setShowReplies(false)
+                if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+                  setShowReplies(false)
+                }
               }}
             >
-              {isAsking && (
+              {isAsking && !showReplies && (
                 <button
                   type="button"
                   className={styles.replyToggle}
                   ref={replyToggle}
-                  aria-expanded={showReplies}
-                  aria-controls={showReplies ? repliesId : undefined}
                   disabled={isPending}
-                  onClick={() => setShowReplies(!showReplies)}
+                  onClick={() => setShowReplies(true)}
                 >
                   답하기 어려워요
-                  <FontAwesomeIcon icon={faChevronDown} />
+                  <FontAwesomeIcon icon={faChevronDown} aria-hidden="true" />
                 </button>
               )}
               {showReplies && (
-                <div className={styles.quickReplies} id={repliesId}>
-                  <button type="button" onClick={() => void runAction({ type: 'DONT_KNOW' })}>
+                <div className={styles.quickReplies} role="group" aria-label="빠른 답변">
+                  <button
+                    type="button"
+                    ref={firstReply}
+                    onClick={() => void runAction({ type: 'DONT_KNOW' })}
+                  >
                     {getReplyText({ type: 'DONT_KNOW' })}
                     <span>답하고 싶은데 말이 잘 안 떠오를 때</span>
                   </button>

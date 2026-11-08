@@ -246,23 +246,18 @@
   align-items: center;
   gap: 6px;
   min-height: 36px;
-  margin-bottom: 4px;
+  margin: 0 auto 4px;
   padding: 0 10px;
   border: 0;
   border-radius: 999px;
-  background: transparent;
+  background: var(--color-surface-green);
   color: color-mix(in srgb, var(--color-black) 72%, var(--color-primary));
   font-size: var(--font-size-caption);
   font-weight: 500;
 }
 
-.replyToggle:hover:not(:disabled),
-.replyToggle[aria-expanded='true'] {
-  background: var(--color-surface-green);
-}
-
-.replyToggle[aria-expanded='true'] svg {
-  rotate: 180deg;
+.replyToggle:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-surface-green), var(--color-primary) 12%);
 }
 
 .quickReplies {
