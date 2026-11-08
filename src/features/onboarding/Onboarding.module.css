@@ -145,7 +145,7 @@
 .actions .guest {
   justify-self: center;
   width: auto;
-  padding: 6px 8px;
+  padding: 6px 12px;
   min-height: 36px;
   background: transparent;
   color: var(--color-black);

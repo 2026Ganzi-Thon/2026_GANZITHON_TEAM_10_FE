@@ -1,6 +1,6 @@
 .button {
   width: 100%;
-  min-height: 44px;
+  min-height: 36px;
   padding: var(--control-padding-block) 16px;
   border: 0;
   border-radius: 12px;
