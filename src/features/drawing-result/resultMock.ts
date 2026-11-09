@@ -3,10 +3,12 @@ import type {
   Conversation,
   ConversationDrawing,
 } from '@/features/drawing-conversation/conversationMock'
+import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
 
 export type DrawingResultSource = {
   drawing: ConversationDrawing
   conversation: Conversation
+  programActivity?: ProgramActivityHandoff
 }
 
 export type DrawingResultData = {

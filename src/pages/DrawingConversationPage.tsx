@@ -2,11 +2,15 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { DrawingConversation } from '@/features/drawing-conversation/DrawingConversation'
 import { exampleDrawing } from '@/features/drawing-conversation/conversationMock'
 import type { ConversationDrawing } from '@/features/drawing-conversation/conversationMock'
+import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
 
 export const DrawingConversationPage = () => {
   const location = useLocation()
   const navigate = useNavigate()
-  const state = location.state as { drawing?: ConversationDrawing } | null
+  const state = location.state as {
+    drawing?: ConversationDrawing
+    programActivity?: ProgramActivityHandoff
+  } | null
   const drawing = state?.drawing ?? (import.meta.env.DEV ? exampleDrawing : null)
   const scenario = import.meta.env.DEV ? new URLSearchParams(location.search).get('mock') : null
 
@@ -16,6 +20,7 @@ export const DrawingConversationPage = () => {
     <DrawingConversation
       key={`${drawing.drawingId}:${scenario}`}
       drawing={drawing}
+      programActivity={state?.programActivity}
       isPreview={!state?.drawing}
       scenario={scenario}
       onBack={() => {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button, Dropdown, HomeLayout, Input, Modal, SheepProfile, TextArea } from '@/components'
+import { PersonalProgramHomeSection } from '@/features/personal-program/ProgramOverview'
 import { useModal } from '@/hooks/useModal'
 import styles from './HomePage.module.css'
 
@@ -15,6 +16,9 @@ export const HomePage = () => {
   return (
     <HomeLayout>
       <div className={styles.page}>
+        <div className={styles.personalProgram}>
+          <PersonalProgramHomeSection />
+        </div>
         <Button color="gray" onClick={openModal}>
           모달 열기 (임시 예시)
         </Button>
