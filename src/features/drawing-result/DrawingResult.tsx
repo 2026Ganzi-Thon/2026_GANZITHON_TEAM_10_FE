@@ -125,7 +125,7 @@ export const DrawingResult = ({
     if (destination !== '/sessions') navigate(destination, { replace: true })
   }
 
-  const saveRecord = async (request: SaveRequest, stayOnResult = false) => {
+  const saveRecord = async (request: SaveRequest) => {
     if (!result || activeSave.current || showReward) return
     const { destination, replaces } = request
     if (recordSaved) {
@@ -155,7 +155,7 @@ export const DrawingResult = ({
       setSaveConflict(null)
       setRecordSaved(true)
       if (saved.status === 'saved') showSavedToast?.()
-      if (!stayOnResult) navigate(destination, { replace: true })
+      navigate(destination, { replace: true })
     } catch {
       if (activeSave.current !== request) return
       mockSaveFailed.current = true
@@ -354,7 +354,7 @@ export const DrawingResult = ({
               actions={[
                 {
                   label: isSaving ? '저장 중…' : '다시 시도',
-                  onClick: () => void saveRecord(failedSave, true),
+                  onClick: () => void saveRecord(failedSave),
                   disabled: isSaving,
                 },
                 { label: '저장 없이 홈으로', color: 'gray', onClick: goHome, disabled: isSaving },
