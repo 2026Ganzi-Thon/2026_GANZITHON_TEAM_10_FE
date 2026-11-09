@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { Button, Input, PageHeader } from '@/components'
@@ -25,23 +25,32 @@ export const Login = () => {
   const [error, setError] = useState('')
   const [credentialsInvalid, setCredentialsInvalid] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const requestRef = useRef<AbortController | null>(null)
+
+  useEffect(() => () => requestRef.current?.abort(), [])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (loading) return
+    if (requestRef.current) return
     setError('')
     setCredentialsInvalid(false)
     setSubmitted(true)
     if (!loginId.trim() || !password) return
+    const controller = new AbortController()
+    requestRef.current = controller
     setLoading(true)
+    let token: string
     try {
-      const { data } = await apiClient.post<LoginResponse>('/api/auth/login', {
-        loginId: loginId.trim(),
-        password,
-      })
+      const { data } = await apiClient.post<LoginResponse>(
+        '/api/auth/login',
+        { loginId: loginId.trim(), password },
+        { signal: controller.signal },
+      )
+      if (controller.signal.aborted) return
       if (!data.success || !data.data?.accessToken) throw new Error('Invalid response')
-      setAccessToken(data.data.accessToken)
+      token = data.data.accessToken
     } catch (error) {
+      if (controller.signal.aborted) return
       setCredentialsInvalid(axios.isAxiosError(error) && error.response?.status === 401)
       setError(
         axios.isAxiosError(error) && error.response?.status === 401
@@ -49,11 +58,16 @@ export const Login = () => {
           : '로그인하지 못했어요. 잠시 후 다시 시도해 주세요.',
       )
       setLoading(false)
+      requestRef.current = null
       return
     }
 
     try {
-      const { data } = await apiClient.get<UserResponse>('/api/users/me')
+      const { data } = await apiClient.get<UserResponse>('/api/users/me', {
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (controller.signal.aborted) return
       if (
         !data.success ||
         !data.data ||
@@ -61,12 +75,16 @@ export const Login = () => {
           (typeof data.data.onboarding !== 'object' || Array.isArray(data.data.onboarding)))
       )
         throw new Error('Invalid response')
+      setAccessToken(token)
       navigate(data.data.onboarding === null ? '/onboarding/profile' : '/home', { replace: true })
     } catch {
-      setAccessToken(null)
+      if (controller.signal.aborted) return
       setError('내 정보를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) {
+        requestRef.current = null
+        setLoading(false)
+      }
     }
   }
 
@@ -75,7 +93,11 @@ export const Login = () => {
       <PageHeader
         title="로그인"
         action="back"
-        onNavigate={() => (location.key === 'default' ? navigate('/onboarding') : navigate(-1))}
+        onNavigate={() => {
+          requestRef.current?.abort()
+          if (location.key === 'default') navigate('/onboarding')
+          else navigate(-1)
+        }}
       />
       <form className={styles.form} onSubmit={handleSubmit} noValidate>
         <div className={styles.intro}>
@@ -124,7 +146,7 @@ export const Login = () => {
               required
             />
           </div>
-          <button type="button" className={styles.forgot}>
+          <button type="button" className={styles.forgot} disabled>
             비밀번호를 잊으셨나요?
           </button>
           {error && !credentialsInvalid && (
@@ -138,7 +160,10 @@ export const Login = () => {
             {loading ? '로그인 중...' : '로그인'}
           </Button>
           <p>
-            아직 계정이 없으신가요? <button type="button">회원가입</button>
+            아직 계정이 없으신가요?{' '}
+            <button type="button" disabled>
+              회원가입
+            </button>
           </p>
         </div>
       </form>
