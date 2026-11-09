@@ -7,10 +7,15 @@ import styles from './Login.module.css'
 
 type LoginResponse = {
   success: boolean
-  data: { accessToken: string; user: { onboardingCompleted: boolean } } | null
+  data: { accessToken: string } | null
 }
 
-/** 로그인 후 액세스 토큰을 저장하고 온보딩 완료 여부에 맞는 화면으로 이동한다. */
+type UserResponse = {
+  success: boolean
+  data: { onboarding: object | null } | null
+}
+
+/** 로그인 후 내 정보를 조회해 온보딩 정보가 없으면 프로필로, 있으면 홈으로 이동한다. */
 export const Login = () => {
   const navigate = useNavigate()
   const location = useLocation()
@@ -29,22 +34,31 @@ export const Login = () => {
         loginId: loginId.trim(),
         password,
       })
-      if (
-        !data.success ||
-        !data.data?.accessToken ||
-        typeof data.data.user?.onboardingCompleted !== 'boolean'
-      )
-        throw new Error('Invalid response')
+      if (!data.success || !data.data?.accessToken) throw new Error('Invalid response')
       setAccessToken(data.data.accessToken)
-      navigate(data.data.user.onboardingCompleted ? '/home' : '/onboarding/profile', {
-        replace: true,
-      })
     } catch (error) {
       setError(
         axios.isAxiosError(error) && error.response?.status === 401
           ? '아이디 또는 비밀번호를 확인해 주세요.'
           : '로그인하지 못했어요. 잠시 후 다시 시도해 주세요.',
       )
+      setLoading(false)
+      return
+    }
+
+    try {
+      const { data } = await apiClient.get<UserResponse>('/api/users/me')
+      if (
+        !data.success ||
+        !data.data ||
+        (data.data.onboarding !== null &&
+          (typeof data.data.onboarding !== 'object' || Array.isArray(data.data.onboarding)))
+      )
+        throw new Error('Invalid response')
+      navigate(data.data.onboarding === null ? '/onboarding/profile' : '/home', { replace: true })
+    } catch {
+      setAccessToken(null)
+      setError('내 정보를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.')
     } finally {
       setLoading(false)
     }
