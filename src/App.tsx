@@ -1,4 +1,5 @@
 import { RouterProvider } from 'react-router-dom'
+import { ReflectionSavedToastProvider } from '@/features/drawing-result/ReflectionSavedToastProvider'
 import { router } from '@/routes/router'
 
 /**
@@ -7,7 +8,11 @@ import { router } from '@/routes/router'
  * @returns 라우터가 연결된 애플리케이션 요소
  */
 const App = () => {
-  return <RouterProvider router={router} />
+  return (
+    <ReflectionSavedToastProvider>
+      <RouterProvider router={router} />
+    </ReflectionSavedToastProvider>
+  )
 }
 
 export default App

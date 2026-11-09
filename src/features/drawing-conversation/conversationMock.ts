@@ -29,6 +29,20 @@ export const exampleDrawing: ConversationDrawing = {
   imageUrl: `data:image/svg+xml,${encodeURIComponent(exampleImage)}`,
 }
 
+const drawingRewardKey = (drawingId: number) => `moyang:mock-drawing-reward:${drawingId}`
+
+export const earnDrawingReward = (drawingId: number) => {
+  const key = drawingRewardKey(drawingId)
+  if (sessionStorage.getItem(key) === null) sessionStorage.setItem(key, 'earned')
+}
+
+export const hasPendingDrawingReward = (drawingId: number) =>
+  sessionStorage.getItem(drawingRewardKey(drawingId)) === 'earned'
+
+export const confirmDrawingReward = (drawingId: number) => {
+  sessionStorage.setItem(drawingRewardKey(drawingId), 'confirmed')
+}
+
 const questions = [
   '그림을 잘 받았어요! 이 그림에서 가장 먼저 이야기하고 싶은 부분이 있나요?',
   '그림을 그리는 동안 어떤 생각이 들었나요?',
@@ -86,9 +100,18 @@ export const updateConversation = async (
 ): Promise<Conversation> => {
   await waitForResponse(500, fail)
 
-  if (action.type === 'END') return { ...conversation, status: 'ended' }
-
   const { questionIndex, messages } = conversation
+  if (action.type === 'END') {
+    return {
+      ...conversation,
+      messages:
+        conversation.status === 'support'
+          ? [...messages, { role: 'assistant', text: supportMessage }]
+          : messages,
+      status: 'ended',
+    }
+  }
+
   if (action.type === 'CONTINUE') {
     const text = extraQuestions[(questionIndex - questions.length + 1) % extraQuestions.length]
     return {
