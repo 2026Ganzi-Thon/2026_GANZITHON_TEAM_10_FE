@@ -6,7 +6,7 @@ const tokenKey = 'moyang.accessToken'
  * 백엔드 요청에서 공통으로 사용하는 클라이언트다.
  */
 export const apiClient = axios.create({
-  baseURL: import.meta.env.DEV ? '/api' : import.meta.env.VITE_API_PRODUCTION_URL || '/api',
+  baseURL: import.meta.env.DEV ? '' : import.meta.env.VITE_API_PRODUCTION_URL || '',
   timeout: 10_000,
 })
 

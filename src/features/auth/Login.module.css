@@ -38,10 +38,10 @@
 }
 
 .forgot {
+  justify-self: end;
   margin: 0;
   color: var(--color-gray);
   font-size: 10px;
-  text-align: right;
 }
 
 .error {
@@ -62,7 +62,27 @@
   font-size: 10px;
 }
 
-.actions span {
+.actions button[type='button'] {
   margin-left: 8px;
   color: var(--color-primary);
+}
+
+.forgot,
+.actions button[type='button'] {
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.forgot:hover,
+.actions button[type='button']:hover {
+  text-decoration: underline;
+}
+
+.forgot:focus-visible,
+.actions button[type='button']:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }

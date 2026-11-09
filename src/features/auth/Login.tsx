@@ -25,7 +25,7 @@ export const Login = () => {
     setError('')
     setLoading(true)
     try {
-      const { data } = await apiClient.post<LoginResponse>('/auth/login', {
+      const { data } = await apiClient.post<LoginResponse>('/api/auth/login', {
         loginId: loginId.trim(),
         password,
       })
@@ -86,7 +86,9 @@ export const Login = () => {
               required
             />
           </div>
-          <p className={styles.forgot}>비밀번호를 잊으셨나요?</p>
+          <button type="button" className={styles.forgot}>
+            비밀번호를 잊으셨나요?
+          </button>
           {error && (
             <p className={styles.error} role="alert">
               {error}
@@ -98,7 +100,7 @@ export const Login = () => {
             {loading ? '로그인 중...' : '로그인'}
           </Button>
           <p>
-            아직 계정이 없으신가요? <span>회원가입</span>
+            아직 계정이 없으신가요? <button type="button">회원가입</button>
           </p>
         </div>
       </form>

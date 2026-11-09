@@ -125,8 +125,8 @@ export const Questionnaire = () => {
     if (isPreview) return
     let active = true
     Promise.all([
-      apiClient.get<Response>('/onboarding/options'),
-      apiClient.get<UserResponse>('/users/me'),
+      apiClient.get<Response>('/api/onboarding/options'),
+      apiClient.get<UserResponse>('/api/users/me'),
     ])
       .then(([optionsResponse, userResponse]) => {
         if (!active) return
@@ -252,7 +252,7 @@ export const Questionnaire = () => {
     if (isPreview) return navigate('/drawing/onboarding/1')
     setLoading(true)
     try {
-      const response = await apiClient.put<{ success: boolean }>('/users/me/onboarding', {
+      const response = await apiClient.put<{ success: boolean }>('/api/users/me/onboarding', {
         birthYear: birthYear ? Number(birthYear) : null,
         gender: gender || null,
         artExperience: artExperience || null,
