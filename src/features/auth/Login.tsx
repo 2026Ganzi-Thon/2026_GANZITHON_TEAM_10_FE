@@ -23,11 +23,13 @@ export const Login = () => {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [credentialsInvalid, setCredentialsInvalid] = useState(false)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (loading) return
     setError('')
+    setCredentialsInvalid(false)
     setLoading(true)
     try {
       const { data } = await apiClient.post<LoginResponse>('/api/auth/login', {
@@ -37,6 +39,7 @@ export const Login = () => {
       if (!data.success || !data.data?.accessToken) throw new Error('Invalid response')
       setAccessToken(data.data.accessToken)
     } catch (error) {
+      setCredentialsInvalid(axios.isAxiosError(error) && error.response?.status === 401)
       setError(
         axios.isAxiosError(error) && error.response?.status === 401
           ? '아이디 또는 비밀번호를 확인해 주세요.'
@@ -84,7 +87,13 @@ export const Login = () => {
               placeholder="아이디를 입력해 주세요"
               autoComplete="username"
               value={loginId}
-              onChange={(event) => setLoginId(event.target.value)}
+              aria-invalid={credentialsInvalid || undefined}
+              aria-describedby={credentialsInvalid ? 'login-password-error' : undefined}
+              onChange={(event) => {
+                setLoginId(event.target.value)
+                setCredentialsInvalid(false)
+                setError('')
+              }}
               required
             />
           </div>
@@ -96,14 +105,19 @@ export const Login = () => {
               type="password"
               autoComplete="current-password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              error={credentialsInvalid ? error : undefined}
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setCredentialsInvalid(false)
+                setError('')
+              }}
               required
             />
           </div>
           <button type="button" className={styles.forgot}>
             비밀번호를 잊으셨나요?
           </button>
-          {error && (
+          {error && !credentialsInvalid && (
             <p className={styles.error} role="alert">
               {error}
             </p>
