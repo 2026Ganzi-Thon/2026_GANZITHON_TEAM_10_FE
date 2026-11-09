@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { RootLayout } from '@/components'
+import { LoginPage } from '@/pages/LoginPage'
 import { StartPage } from '@/pages/StartPage'
 import { OnboardingProfilePage } from '@/pages/OnboardingProfilePage'
 import { OnboardingLifestylePage } from '@/pages/OnboardingLifestylePage'
@@ -31,7 +32,10 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <Navigate to="/onboarding" replace /> },
       { path: '/onboarding', element: <StartPage /> },
-      { path: '/login', element: null },
+      {
+        path: '/login',
+        element: <LoginPage />,
+      },
       { path: '/onboarding/profile', element: <OnboardingProfilePage /> },
       { path: '/onboarding/lifestyle', element: <OnboardingLifestylePage /> },
       { path: '/onboarding/concerns', element: <OnboardingConcernsPage /> },

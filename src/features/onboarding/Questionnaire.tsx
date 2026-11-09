@@ -84,9 +84,10 @@ const Progress = ({ step }: { step: number }) => (
 /**
  * 다섯 단계의 설문 응답을 보관하고 마지막 단계에서 한 번에 저장한다.
  * `page` 쿼리의 1~5는 최초 진입 단계이며, 다른 값은 1단계로 처리한다.
- * 개발 환경의 `preview` 쿼리는 임시 선택지를 사용하고 서버 저장 없이 그림 안내 화면으로 이동한다.
+ * 개발 환경의 `?preview` 또는 `?preview=onboarding`은 임시 선택지를 사용하고 서버 저장 없이 그림 안내 화면으로 이동한다.
  * 일반 모드에서는 선택지와 기존 답변을 조회하고 온보딩 답변을 통째로 저장한다.
- * 앞선 필수 답변이 없는 중간 단계 진입은 1단계에서 시작하고, 기존 답변 조회 실패 시 저장하지 않는다.
+ * 중간 단계 진입 시 앞선 필수 선택이나 직접 입력이 비어 있으면 1단계에서 시작한다.
+ * 마지막 저장 전 입력 길이를 다시 확인하며, 기존 답변 조회 실패 시 저장하지 않는다.
  *
  * @returns 설문 화면 또는 선택지 로딩·오류 화면
  */
@@ -124,8 +125,8 @@ export const Questionnaire = () => {
     if (isPreview) return
     let active = true
     Promise.all([
-      apiClient.get<Response>('/onboarding/options'),
-      apiClient.get<UserResponse>('/users/me'),
+      apiClient.get<Response>('/api/onboarding/options'),
+      apiClient.get<UserResponse>('/api/users/me'),
     ])
       .then(([optionsResponse, userResponse]) => {
         if (!active) return
@@ -251,7 +252,7 @@ export const Questionnaire = () => {
     if (isPreview) return navigate('/drawing/onboarding/1')
     setLoading(true)
     try {
-      const response = await apiClient.put<{ success: boolean }>('/users/me/onboarding', {
+      const response = await apiClient.put<{ success: boolean }>('/api/users/me/onboarding', {
         birthYear: birthYear ? Number(birthYear) : null,
         gender: gender || null,
         artExperience: artExperience || null,

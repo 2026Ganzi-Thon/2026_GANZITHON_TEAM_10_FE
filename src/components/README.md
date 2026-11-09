@@ -54,6 +54,8 @@ import { Dropdown } from '@/components'
 
 한 줄 텍스트 입력은 `Input`을 사용합니다. `label`은 선택 사항이며, 생략하면 라벨과 여백이 표시되지 않습니다. 라벨이 없는 경우 `aria-label`이나 외부 라벨로 입력 목적을 제공하세요. `value`, `onChange`, `disabled`, `maxLength` 등 일반 input 속성을 전달할 수 있습니다.
 
+`error` 또는 `success`에 메시지를 전달하면 입력란 아래 오른쪽에 안내 문구가 표시됩니다. 둘 다 전달하면 오류가 우선합니다.
+
 ```tsx
 import { Input } from '@/components'
 
