@@ -24,12 +24,15 @@ export const Login = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [credentialsInvalid, setCredentialsInvalid] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (loading) return
     setError('')
     setCredentialsInvalid(false)
+    setSubmitted(true)
+    if (!loginId.trim() || !password) return
     setLoading(true)
     try {
       const { data } = await apiClient.post<LoginResponse>('/api/auth/login', {
@@ -74,7 +77,7 @@ export const Login = () => {
         action="back"
         onNavigate={() => (location.key === 'default' ? navigate('/onboarding') : navigate(-1))}
       />
-      <form className={styles.form} onSubmit={handleSubmit}>
+      <form className={styles.form} onSubmit={handleSubmit} noValidate>
         <div className={styles.intro}>
           <h2>다시 만나서 반가워요!</h2>
           <p>모양에서 나의 마음을 이어서 살펴봐요.</p>
@@ -87,8 +90,9 @@ export const Login = () => {
               placeholder="아이디를 입력해 주세요"
               autoComplete="username"
               value={loginId}
+              error={submitted && !loginId.trim() ? '아이디를 입력해 주세요.' : undefined}
               aria-invalid={credentialsInvalid || undefined}
-              aria-describedby={credentialsInvalid ? 'login-password-error' : undefined}
+              aria-describedby={credentialsInvalid ? 'login-password-message' : undefined}
               onChange={(event) => {
                 setLoginId(event.target.value)
                 setCredentialsInvalid(false)
@@ -105,7 +109,13 @@ export const Login = () => {
               type="password"
               autoComplete="current-password"
               value={password}
-              error={credentialsInvalid ? error : undefined}
+              error={
+                submitted && !password
+                  ? '비밀번호를 입력해 주세요.'
+                  : credentialsInvalid
+                    ? error
+                    : undefined
+              }
               onChange={(event) => {
                 setPassword(event.target.value)
                 setCredentialsInvalid(false)

@@ -49,6 +49,7 @@
   color: #b3261e;
   font-size: var(--font-size-caption);
   line-height: 1.5;
+  text-align: right;
 }
 
 .actions {
