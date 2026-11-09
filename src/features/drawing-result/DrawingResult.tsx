@@ -15,6 +15,9 @@ import {
 } from '@/features/drawing-conversation/conversationMock'
 import chatStyles from '@/features/drawing-conversation/DrawingConversation.module.css'
 import { useModal } from '@/hooks/useModal'
+import { completeProgramActivity } from '@/features/personal-program/programMock'
+import type { ProgramStartReflection } from '@/features/personal-program/programSchedule'
+import { loadProgramConcern } from './programConcern'
 import { ReflectionSavedToastContext } from './reflectionSavedToast'
 import { createReflectionPreview, loadDrawingResult, saveDrawingResult } from './resultMock'
 import type { DrawingResultData, DrawingResultSource, MockRecord } from './resultMock'
@@ -62,6 +65,7 @@ export const DrawingResult = ({
   const [imageFailed, setImageFailed] = useState(false)
   const [recordSaved, setRecordSaved] = useState(false)
   const [savingDestination, setSavingDestination] = useState<Destination | null>(null)
+  const [concernFailed, setConcernFailed] = useState(false)
   const [failedSave, setFailedSave] = useState<SaveRequest | null>(null)
   const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null)
   const [showReward, setShowReward] = useState(
@@ -71,12 +75,15 @@ export const DrawingResult = ({
   )
   const { isOpen: showLeave, openModal: openLeave, closeModal: closeLeave } = useModal()
   const activeSave = useRef<SaveRequest | null>(null)
+  const resolvedConcern = useRef<ProgramStartReflection['concern'] | undefined>(undefined)
   const mockSaveFailed = useRef(false)
   const preview = useRef(createReflectionPreview(scenario))
   const conversationButton = useRef<HTMLButtonElement>(null)
   const closeConversationButton = useRef<HTMLButtonElement>(null)
   const openedConversation = useRef(false)
   const isSaving = savingDestination !== null
+  const programActivity = source?.programActivity
+  const programScenario = import.meta.env.DEV ? programActivity?.mock : undefined
 
   useEffect(() => {
     if (!source || result) return
@@ -128,15 +135,49 @@ export const DrawingResult = ({
   const saveRecord = async (request: SaveRequest) => {
     if (!result || activeSave.current || showReward) return
     const { destination, replaces } = request
-    if (recordSaved) {
-      navigate(destination, { replace: true })
-      return
-    }
 
     activeSave.current = request
     setSavingDestination(destination)
+    setConcernFailed(false)
 
     try {
+      let firstReflection: ProgramStartReflection | undefined
+      if (destination === '/sessions' && !programActivity) {
+        const concern =
+          result.drawing.concern ??
+          resolvedConcern.current ??
+          (await loadProgramConcern().catch(() => undefined))
+        if (activeSave.current !== request) return
+        if (!concern) {
+          setConcernFailed(true)
+          return
+        }
+        resolvedConcern.current = concern
+        firstReflection = {
+          id: result.drawing.drawingId,
+          concern,
+          title: result.drawing.title,
+          story: result.card.todaysStory,
+        }
+      }
+      const continueActivity = () => {
+        if (destination === '/sessions' && programActivity) {
+          const search = new URLSearchParams({ programId: programActivity.programId })
+          if (programScenario) search.set('mock', programScenario)
+          navigate({ pathname: destination, search: `?${search}` }, { replace: true })
+          return
+        }
+        navigate(destination, {
+          replace: true,
+          state: firstReflection ? { firstReflection } : undefined,
+        })
+      }
+
+      if (recordSaved) {
+        continueActivity()
+        return
+      }
+
       const fail =
         scenario === (replaces ? 'replace-error' : 'save-error') && !mockSaveFailed.current
       const saved = await saveDrawingResult(result.drawing, {
@@ -152,10 +193,11 @@ export const DrawingResult = ({
         return
       }
 
+      if (programActivity) completeProgramActivity(programActivity, programScenario)
       setSaveConflict(null)
       setRecordSaved(true)
       if (saved.status === 'saved') showSavedToast?.()
-      navigate(destination, { replace: true })
+      continueActivity()
     } catch {
       if (activeSave.current !== request) return
       mockSaveFailed.current = true
@@ -310,6 +352,11 @@ export const DrawingResult = ({
                     <img src={nextArrow} alt="" />
                   </Button>
                 ))}
+                {concernFailed && (
+                  <p className="text-caption" role="alert">
+                    선택한 고민을 확인하지 못했어요. 잠시 후 다시 눌러 주세요.
+                  </p>
+                )}
               </section>
 
               {isSaving && !failedSave && !saveConflict && (

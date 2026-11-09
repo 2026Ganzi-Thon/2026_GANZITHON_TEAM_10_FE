@@ -11,6 +11,7 @@ import {
 import { faClipboard, faCommentDots } from '@fortawesome/free-regular-svg-icons'
 import { Button, Modal } from '@/components'
 import { useModal } from '@/hooks/useModal'
+import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
 import { ConversationLoading } from './ConversationLoading'
 import { ConversationBubble, ConversationMessages } from './ConversationMessages'
 import {
@@ -25,6 +26,7 @@ import styles from './DrawingConversation.module.css'
 
 type DrawingConversationProps = {
   drawing: ConversationDrawing
+  programActivity?: ProgramActivityHandoff
   isPreview: boolean
   scenario: string | null
   onBack: () => void
@@ -56,6 +58,7 @@ const isDialogBackdrop = ({ target, clientX, clientY }: MouseEvent<HTMLDivElemen
 
 export const DrawingConversation = ({
   drawing,
+  programActivity,
   isPreview,
   scenario,
   onBack,
@@ -170,7 +173,9 @@ export const DrawingConversation = ({
   }
 
   if (conversation?.status === 'ended') {
-    return <Navigate replace to="/drawing/result" state={{ drawing, conversation }} />
+    return (
+      <Navigate replace to="/drawing/result" state={{ drawing, conversation, programActivity }} />
+    )
   }
 
   const pendingReply = pending ? getReplyText(pending) : ''

@@ -3,6 +3,7 @@ export type ConversationDrawing = {
   title: string
   imageUrl?: string
   note?: string | null
+  concern?: { id: string; label: string }
 }
 
 type Message = { role: 'assistant' | 'user'; text: string }
@@ -27,6 +28,7 @@ export const exampleDrawing: ConversationDrawing = {
   drawingId: 0,
   title: '내가 서 있는 자리',
   imageUrl: `data:image/svg+xml,${encodeURIComponent(exampleImage)}`,
+  concern: { id: 'relationships', label: '대인관계' },
 }
 
 const drawingRewardKey = (drawingId: number) => `moyang:mock-drawing-reward:${drawingId}`

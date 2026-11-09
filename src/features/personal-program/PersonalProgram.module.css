@@ -1,0 +1,638 @@
+.route {
+  height: 100%;
+}
+
+.page {
+  min-height: 100%;
+  background: var(--color-white);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  padding: 8px 16px;
+  font-size: var(--font-size-choice);
+  font-weight: 700;
+}
+
+.header a {
+  display: grid;
+  width: 36px;
+  min-height: 40px;
+  place-items: center;
+  color: inherit;
+}
+
+.content {
+  --program-gutter: clamp(20px, 8vw, 32px);
+
+  display: grid;
+  gap: 24px;
+  padding: 28px var(--program-gutter) 40px;
+}
+
+.content :is(h1, h2, p, ul, ol, dl, dd),
+.homeSection :is(h2, p, ul) {
+  margin: 0;
+}
+
+.intro,
+.overview,
+.timelineSection,
+.guide {
+  display: grid;
+  gap: 12px;
+}
+
+.headline {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.2;
+  word-break: keep-all;
+}
+
+.description,
+.timelineSection > p,
+.guide li,
+.status {
+  font-size: var(--font-size-caption);
+  line-height: 1.55;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.concern,
+.progressLabel,
+.homeCardTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.concern h2 {
+  min-width: 0;
+  font-size: var(--font-size-heading);
+  overflow-wrap: anywhere;
+}
+
+.concern span {
+  flex: none;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.progressCard {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-surface-green);
+}
+
+.progressLabel,
+.homeCardTitle {
+  justify-content: space-between;
+}
+
+.progressLabel {
+  font-size: var(--font-size-caption);
+  font-weight: 700;
+}
+
+.progressCard progress {
+  width: 100%;
+  height: 6px;
+  appearance: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-gray-light);
+  color: var(--color-primary);
+  accent-color: var(--color-primary);
+}
+
+.progressCard progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: var(--color-gray-light);
+}
+
+.progressCard progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--color-primary);
+}
+
+.progressCard progress::-moz-progress-bar {
+  border-radius: 999px;
+  background: var(--color-primary);
+}
+
+.timelineSection h2,
+.guide h2,
+.scheduleForm legend,
+.editForm legend {
+  padding: 0;
+  font-size: var(--font-size-body);
+  font-weight: 700;
+}
+
+.timeline,
+.setupTimeline {
+  display: grid;
+  list-style: none;
+}
+
+.continueTimeline {
+  margin-top: 12px;
+}
+
+.timeline {
+  --step-gap: 18px;
+
+  gap: var(--step-gap);
+  padding: 12px;
+  border: 1px solid var(--color-gray-light);
+  border-radius: 10px;
+}
+
+.timelineSection .setupTimeline {
+  gap: 0;
+  margin-top: 8px;
+  padding: 0;
+}
+
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  color: #555d57;
+}
+
+.setupTimeline .step {
+  min-height: 68px;
+  padding-bottom: 14px;
+}
+
+.setupTimeline .step:first-child {
+  padding-bottom: 30px;
+}
+
+.setupTimeline .step:last-child {
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+.timeline .step:not(:last-child)::before {
+  position: absolute;
+  inset: 8px auto calc(-1 * var(--step-gap)) 7px;
+  border-left: 1px dashed var(--color-gray-light);
+  content: '';
+}
+
+.setupTimeline .step:not(:last-child)::before {
+  position: absolute;
+  inset: 8px auto 0 7px;
+  width: 2px;
+  background: var(--color-gray-light);
+  content: '';
+}
+
+.stepNumber {
+  z-index: 0;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-gray-light);
+  color: var(--color-black);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.step[data-status='complete'] {
+  color: #44704e;
+}
+
+.step[data-status='complete'] .stepNumber {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.step[data-status='next'] {
+  color: var(--color-black);
+}
+
+.step[data-status='next'] .stepNumber {
+  background: var(--color-surface-green);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.stepName,
+.topic {
+  font-size: var(--font-size-body);
+  line-height: 1.35;
+}
+
+.stepName {
+  font-weight: 600;
+}
+
+.topic {
+  margin-top: 8px;
+  color: var(--color-black);
+  overflow-wrap: anywhere;
+}
+
+.topic p {
+  font-size: var(--font-size-caption);
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.scheduleForm,
+.editForm {
+  display: grid;
+  gap: 16px;
+}
+
+.editForm {
+  position: relative;
+  margin: 0 calc(-1 * var(--program-gutter)) -40px;
+  padding: 40px var(--program-gutter) 32px;
+  border-radius: 16px 16px 0 0;
+  background: var(--color-surface-green);
+}
+
+.editClose {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.editClose:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scheduleForm fieldset,
+.editForm fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.scheduleForm fieldset p,
+.editForm fieldset p {
+  margin: 8px 0 12px;
+  font-size: var(--font-size-caption);
+  line-height: 1.55;
+}
+
+.weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: clamp(2px, 1.4vw, 7px);
+}
+
+.weekdays button {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--color-black);
+  font: inherit;
+  font-size: var(--font-size-body);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.weekdays button span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--color-gray);
+  border-radius: 50%;
+  background: var(--color-white);
+}
+
+.scheduleForm .weekdays button[aria-pressed='false'] span {
+  border-color: var(--color-gray-light);
+}
+
+.weekdays button[aria-pressed='true'] span {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.weekdays button:focus-visible,
+.homeToggle:focus-visible,
+.editClose:focus-visible,
+.homeCard:focus-visible,
+.header a:focus-visible,
+.textLink:focus-visible {
+  outline: 2px solid var(--color-black);
+  outline-offset: 2px;
+}
+
+.weekdays button:disabled {
+  cursor: not-allowed;
+}
+
+.schedule {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-primary);
+  border-radius: 10px;
+  background: var(--color-white);
+}
+
+.scheduleTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-caption);
+  font-weight: 700;
+}
+
+.scheduleTitle svg {
+  color: var(--color-primary);
+}
+
+.schedule dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+}
+
+.schedule dt {
+  font-weight: 700;
+}
+
+.schedule dd {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.guide ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 16px;
+}
+
+.status {
+  color: #44704e;
+  font-weight: 600;
+}
+
+.error {
+  color: #9e3838;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+}
+
+.formActions,
+.actions {
+  display: grid;
+  gap: 8px;
+}
+
+.actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.actions button:last-child {
+  grid-column: 1 / -1;
+}
+
+.formActions button,
+.actions button {
+  min-height: 44px;
+  padding-inline: 8px;
+  font-size: var(--font-size-body);
+}
+
+.formActions button:disabled,
+.actions button:disabled {
+  background: var(--color-gray-light);
+  color: #555d57;
+  opacity: 1;
+}
+
+.activityPage {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-green);
+}
+
+.activityContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.activityIntro {
+  display: grid;
+  gap: 10px;
+}
+
+.activityIllustration {
+  display: grid;
+  min-height: 172px;
+  place-items: center;
+}
+
+.activityIllustration img {
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.activityPrompt {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--color-white);
+}
+
+.activityPrompt h2 {
+  font-size: var(--font-size-heading);
+  line-height: 1.35;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.activityLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-caption);
+  font-weight: 700;
+}
+
+.activityDescription {
+  font-size: var(--font-size-body);
+  line-height: 1.55;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.activityTag {
+  max-width: 100%;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--color-surface-green);
+  color: #44704e;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.activityActions {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 12px;
+  text-align: center;
+}
+
+.activityActions button {
+  min-height: 44px;
+}
+
+.previewHome {
+  min-height: 100%;
+  padding: 24px clamp(16px, 5vw, 24px);
+  background: var(--color-surface-green);
+}
+
+.homeSection {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--color-white);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 12%);
+}
+
+.homeSection h2 {
+  font-size: var(--font-size-choice);
+  line-height: 1.4;
+}
+
+.homeToggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.homeToggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.homeSummary {
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+}
+
+.homeNext {
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+}
+
+.homeList {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.homeList[hidden] {
+  display: none;
+}
+
+.homeCard {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--color-surface-green);
+  color: inherit;
+  font-size: var(--font-size-body);
+  text-decoration: none;
+}
+
+.homeCardTitle {
+  align-items: center;
+}
+
+.homeCardTitle strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.homeCardTitle svg {
+  flex: none;
+}
+
+.homeCardSchedule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: var(--font-size-caption);
+}
+
+.homeCard .progressCard {
+  gap: 4px;
+  padding: 4px 0 0;
+}
+
+.textLink {
+  width: fit-content;
+  color: #44704e;
+  font-size: var(--font-size-body);
+  font-weight: 700;
+  text-underline-offset: 4px;
+}
+
+.screenReaderOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
