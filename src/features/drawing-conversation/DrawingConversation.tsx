@@ -9,10 +9,12 @@ import {
   faChevronRight,
 } from '@fortawesome/free-solid-svg-icons'
 import { faClipboard, faCommentDots } from '@fortawesome/free-regular-svg-icons'
-import { Button, Modal, SheepProfile } from '@/components'
+import { Button, Modal } from '@/components'
 import { useModal } from '@/hooks/useModal'
 import { ConversationLoading } from './ConversationLoading'
+import { ConversationBubble, ConversationMessages } from './ConversationMessages'
 import {
+  earnDrawingReward,
   getReplyText,
   startConversation,
   supportMessage,
@@ -80,6 +82,10 @@ export const DrawingConversation = ({
   const restoreReplyFocus = useRef(false)
   const isAsking = conversation?.status === 'asking'
   const isPending = pending !== null
+
+  useEffect(() => {
+    earnDrawingReward(drawing.drawingId)
+  }, [drawing.drawingId])
 
   useEffect(() => {
     if (conversation || scenario === 'loading') return
@@ -241,19 +247,8 @@ export const DrawingConversation = ({
             </Modal>
           </div>
 
-          <div className={styles.messages} ref={messageList} role="log" aria-label="그림 대화">
-            {conversation.messages.map((message, index) => (
-              <div className={styles[message.role]} key={index}>
-                {message.role === 'assistant' && <SheepProfile color="white" size={40} alt="" />}
-                <p className={styles.bubble}>{message.text}</p>
-              </div>
-            ))}
-
-            {pendingReply && (
-              <div className={styles.user}>
-                <p className={styles.bubble}>{pendingReply}</p>
-              </div>
-            )}
+          <ConversationMessages messages={conversation.messages} ref={messageList}>
+            {pendingReply && <ConversationBubble role="user" text={pendingReply} />}
             {pending && (
               <p className={styles.feedback} role="status">
                 {pending.type === 'END'
@@ -296,12 +291,9 @@ export const DrawingConversation = ({
             )}
 
             {conversation.status === 'support' && (
-              <div className={styles.assistant}>
-                <SheepProfile color="white" size={40} alt="" />
-                <p className={styles.bubble}>{supportMessage}</p>
-              </div>
+              <ConversationBubble role="assistant" text={supportMessage} />
             )}
-          </div>
+          </ConversationMessages>
 
           {conversation.status !== 'support' && (
             <div
