@@ -1,62 +1,86 @@
+import {
+  hasSavedReflection,
+  readReflections,
+  withReflectionLock,
+  writeReflections,
+} from '@/lib/mock-reflections'
+import type { MockRecord, MockReflectionStore, ReflectionCard } from '@/lib/mock-reflections'
 import { exampleDrawing, getReplyText } from '@/features/drawing-conversation/conversationMock'
 import type {
   Conversation,
   ConversationDrawing,
 } from '@/features/drawing-conversation/conversationMock'
 import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
+import { canCompleteProgramActivity, readPrograms } from '@/features/personal-program/programMock'
 
 export type DrawingResultSource = {
   drawing: ConversationDrawing
   conversation: Conversation
   programActivity?: ProgramActivityHandoff
+  conversationStorageKey?: string
 }
 
 export type DrawingResultData = {
   drawing: ConversationDrawing
   messages: Conversation['messages']
-  card: {
-    todaysStory: string
-    whatISaid?: string
-    thoughts?: string
-  }
+  card: ReflectionCard
 }
 
 type SaveOutcome =
-  { status: 'saved' | 'already-saved' } | { status: 'daily-limit'; record: MockRecord }
+  | { status: 'saved'; sheepReward: 1 }
+  | { status: 'already-saved'; record?: MockRecord }
+  | { status: 'daily-limit' }
+  | { status: 'activity-unavailable' }
 
-export type MockRecord = { drawingId: number; recordDate: string; title?: string }
-
-type MockReflectionStore = {
-  records: MockRecord[]
-  completedDrawingIds: number[]
-}
-
-const recordsKey = 'moyang:mock-reflection-records'
 const recordDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' })
 const skippedReplies = [getReplyText({ type: 'DONT_KNOW' }), getReplyText({ type: 'SKIP' })]
 
-export const createReflectionPreview = (scenario: string | null): MockReflectionStore | null => {
-  if (scenario === 'save-success' || scenario === 'save-error') {
+const getActivityKey = ({ programId, round }: ProgramActivityHandoff) => `${programId}:${round}`
+
+const isActivityRecord = (record: MockRecord, activity: ProgramActivityHandoff) => {
+  const key = getActivityKey(activity)
+  return record.activityKey === key || record.activityKey?.startsWith(`${key}:`) === true
+}
+
+export const getReflectionSaveStatus = (
+  store: MockReflectionStore,
+  drawingId: number,
+  activity?: ProgramActivityHandoff,
+  today = recordDate.format(new Date()),
+) => {
+  if (hasSavedReflection(store, drawingId)) return 'already-saved'
+  if (activity && store.records.some((record) => isActivityRecord(record, activity))) {
+    return 'already-saved'
+  }
+
+  return store.records.some((record) => record.recordDate === today) ? 'daily-limit' : 'available'
+}
+
+export const createReflectionPreview = (
+  scenario: string | null,
+  source: DrawingResultSource | null,
+): MockReflectionStore | null => {
+  if (scenario === 'reward' || scenario === 'save-success' || scenario === 'save-error') {
     return { records: [], completedDrawingIds: [] }
   }
 
-  if (scenario === 'daily-limit' || scenario === 'replace-error' || scenario === 'already-saved') {
+  if (scenario === 'daily-limit' || scenario === 'already-saved') {
     const drawingId = scenario === 'already-saved' ? exampleDrawing.drawingId : -1
-    const title = scenario === 'already-saved' ? exampleDrawing.title : '오전에 남긴 마음'
     return {
-      records: [{ drawingId, title, recordDate: recordDate.format(new Date()) }],
+      records: [{ drawingId, recordDate: recordDate.format(new Date()), sheepReward: 1 }],
       completedDrawingIds: [drawingId],
     }
   }
 
-  return null
-}
+  const activity = source?.programActivity
+  if (import.meta.env.DEV && source && activity?.mock) {
+    const completed = readPrograms(activity.mock).some(
+      (program) => program.id === activity.programId && program.completed >= activity.round,
+    )
+    return { records: [], completedDrawingIds: completed ? [source.drawing.drawingId] : [] }
+  }
 
-const readReflections = (): MockReflectionStore => {
-  const saved = sessionStorage.getItem(recordsKey)
-  const data: MockReflectionStore | MockRecord[] = saved ? JSON.parse(saved) : []
-  if (!Array.isArray(data)) return data
-  return { records: data, completedDrawingIds: data.map(({ drawingId }) => drawingId) }
+  return null
 }
 
 export const exampleResultSource: DrawingResultSource = {
@@ -121,34 +145,64 @@ export const loadDrawingResult = async (
 }
 
 export const saveDrawingResult = async (
-  { drawingId, title }: ConversationDrawing,
+  { drawing: { drawingId, title }, card }: DrawingResultData,
   {
     preview,
+    previewWallet,
     fail,
-    replaces,
-  }: { preview: MockReflectionStore | null; fail: boolean; replaces?: MockRecord },
+    signal,
+    activity,
+  }: {
+    preview: MockReflectionStore | null
+    previewWallet: boolean
+    fail: boolean
+    signal: AbortSignal
+    activity?: ProgramActivityHandoff
+  },
 ): Promise<SaveOutcome> => {
   await new Promise((resolve) => window.setTimeout(resolve, 500))
+  signal.throwIfAborted()
   if (fail) throw new Error('Mock record save failed')
 
-  const { records, completedDrawingIds } = preview ?? readReflections()
-  if (completedDrawingIds.includes(drawingId)) return { status: 'already-saved' }
+  const save = (): SaveOutcome => {
+    signal.throwIfAborted()
+    const store = preview ?? readReflections(previewWallet)
+    const { records, completedDrawingIds } = store
+    const today = recordDate.format(new Date())
+    const status = getReflectionSaveStatus(store, drawingId, activity, today)
+    if (status === 'already-saved') {
+      return {
+        status,
+        record: activity
+          ? records.find((record) => isActivityRecord(record, activity))
+          : records.find((record) => record.drawingId === drawingId),
+      }
+    }
+    if (status === 'daily-limit') return { status }
+    if (activity && !canCompleteProgramActivity(activity, activity.mock)) {
+      return { status: 'activity-unavailable' }
+    }
 
-  const today = recordDate.format(new Date())
-  const existing = records.find((record) => record.recordDate === today)
-
-  if (existing && (replaces?.recordDate !== today || replaces.drawingId !== existing.drawingId)) {
-    return { status: 'daily-limit', record: existing }
+    const sheepReward = 1
+    const next: MockReflectionStore = {
+      ...store,
+      records: [
+        ...records,
+        {
+          drawingId,
+          recordDate: today,
+          sheepReward,
+          title,
+          card,
+          ...(activity && { activityKey: getActivityKey(activity) }),
+        },
+      ],
+      completedDrawingIds: [...completedDrawingIds, drawingId],
+    }
+    if (preview) Object.assign(preview, next)
+    else writeReflections(next, previewWallet)
+    return { status: 'saved', sheepReward }
   }
 
-  const next = {
-    records: [
-      ...records.filter((record) => record.recordDate !== today),
-      { drawingId, title, recordDate: today },
-    ],
-    completedDrawingIds: [...completedDrawingIds, drawingId],
-  }
-  if (preview) Object.assign(preview, next)
-  else sessionStorage.setItem(recordsKey, JSON.stringify(next))
-  return { status: 'saved' }
+  return preview ? save() : withReflectionLock(signal, save)
 }

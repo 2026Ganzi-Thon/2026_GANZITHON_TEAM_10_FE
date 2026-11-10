@@ -11,8 +11,10 @@ type OptionsResponse = {
   data: { themes: { code: string; label: string }[] } | null
 }
 
-export const loadProgramConcern = async (): Promise<ProgramConcern | undefined> => {
-  const { data: profile } = await apiClient.get<UserResponse>('/api/users/me')
+export const loadProgramConcern = async (
+  signal: AbortSignal,
+): Promise<ProgramConcern | undefined> => {
+  const { data: profile } = await apiClient.get<UserResponse>('/api/users/me', { signal })
   const onboarding = profile.success ? profile.data?.onboarding : null
   if (!onboarding?.themeCode) return
 
@@ -22,7 +24,9 @@ export const loadProgramConcern = async (): Promise<ProgramConcern | undefined> 
     return label ? { id: `DIRECT:${label}`, label } : undefined
   }
 
-  const { data: options } = await apiClient.get<OptionsResponse>('/api/onboarding/options')
+  const { data: options } = await apiClient.get<OptionsResponse>('/api/onboarding/options', {
+    signal,
+  })
   const theme = options.success
     ? options.data?.themes.find(({ code }) => code === themeCode)
     : undefined

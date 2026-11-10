@@ -153,18 +153,20 @@
 }
 
 .messages {
+  --assistant-indent: 50px;
+
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 60px 26px 20px 29px;
+  padding: clamp(16px, 7.1dvh, 60px) 22px 20px;
 }
 
 .assistant,
 .user {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 20px;
 }
 
@@ -197,7 +199,7 @@
 }
 
 .feedback {
-  margin: 0 0 12px 48px;
+  margin: 0 0 12px var(--assistant-indent);
   font-size: var(--font-size-caption);
   line-height: 1.5;
 }
@@ -215,7 +217,7 @@
   display: grid;
   gap: 10px;
   max-width: 220px;
-  margin-left: 48px;
+  margin-left: var(--assistant-indent);
 }
 
 .review button {
@@ -234,6 +236,20 @@
 
 .review button > :last-child {
   margin-left: auto;
+}
+
+.review small {
+  display: block;
+  margin-top: 2px;
+  color: color-mix(in srgb, var(--color-primary) 60%, var(--color-black));
+  font-size: var(--font-size-caption);
+}
+
+.woolBalance,
+.woolShortage {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
 }
 
 .composer {

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faCircleInfo } from '@fortawesome/free-solid-svg-icons'
 import { Button, HomeLayout, Modal, SheepProfile } from '@/components'
+import { exampleDrawing } from '@/features/drawing-conversation/conversationMock'
 import { useModal } from '@/hooks/useModal'
 import {
   PersonalProgramHomeSection,
@@ -26,13 +27,14 @@ import {
   getToday,
   rounds,
 } from './programSchedule'
-import type { ProgramStartReflection } from './programSchedule'
+import type { FirstReflection } from './programSchedule'
 import { useProgramToday } from './useProgramToday'
 import styles from './PersonalProgram.module.css'
 
 type SessionLocation = {
-  firstReflection?: ProgramStartReflection
+  firstReflection?: FirstReflection
   programActivity?: ProgramActivityHandoff
+  completedRound?: number
 }
 
 export const PersonalProgramPage = () => {
@@ -40,13 +42,16 @@ export const PersonalProgramPage = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const state = location.state as SessionLocation | null
-  const scenario = import.meta.env.DEV ? getProgramScenario(params.get('mock')) : undefined
+  const mockScenario = import.meta.env.DEV ? getProgramScenario(params.get('mock')) : undefined
   const id = params.get('programId')
   const view = params.get('view')
   const isHomePreview = import.meta.env.DEV && view === 'home'
   const isPreview =
     import.meta.env.DEV &&
-    Boolean(scenario || isHomePreview || params.has('preview') || (!state?.firstReflection && !id))
+    Boolean(
+      mockScenario || isHomePreview || params.has('preview') || (!state?.firstReflection && !id),
+    )
+  const scenario = mockScenario ?? (isPreview ? 'setup' : undefined)
   const reflection = state?.firstReflection ?? (isPreview ? exampleReflection : undefined)
   const programs = readPrograms(scenario)
   const program = id
@@ -78,6 +83,10 @@ export const PersonalProgramPage = () => {
   const currentSchedule = program && getActivitySchedule(program, today)
   const completed = program?.completed ?? 1
   const isComplete = completed === rounds.length
+  const justCompleted =
+    program && !program.cancelled && state?.completedRound === completed
+      ? rounds[completed - 1]
+      : undefined
   const title = program ? '나의 모양 이어가기' : '나만의 모양 만들기'
 
   const saveSchedule = async (days: number[], signal: AbortSignal) => {
@@ -87,7 +96,7 @@ export const PersonalProgramPage = () => {
     const fail = scenario === 'save-error' && !failedOnce.current
     failedOnce.current = true
     await saveProgramSchedule({
-      reflection: { id: firstReflection.id, concern: firstReflection.concern },
+      reflection: firstReflection,
       programId: program?.id,
       days,
       fail,
@@ -185,15 +194,29 @@ export const PersonalProgramPage = () => {
           </section>
           <div className={styles.activityActions}>
             <p className={styles.description}>잘 그리려 하지 않아도 괜찮아요.</p>
-            <Button
-              onClick={() =>
-                navigate('/drawing', {
-                  state: { programActivity: { ...activity, mock: scenario } },
-                })
-              }
-            >
-              이 주제로 그림 그리기
-            </Button>
+            {scenario ? (
+              <Link
+                className={styles.textLink}
+                to="/drawing/conversation"
+                state={{
+                  drawing: {
+                    ...exampleDrawing,
+                    drawingId: -activity.round,
+                    title: activity.topic,
+                    concern: activity.concern,
+                  },
+                  programActivity: { ...activity, mock: scenario },
+                }}
+              >
+                예시 그림으로 대화하기
+              </Link>
+            ) : (
+              <Button
+                onClick={() => navigate('/drawing', { state: { programActivity: activity } })}
+              >
+                이 주제로 그림 그리기
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -246,16 +269,18 @@ export const PersonalProgramPage = () => {
           <ProgramProgress completed={completed} />
           {!program && <p className={styles.status}>첫 번째 모양을 마쳤어요.</p>}
           {program && (
-            <p className={styles.status}>
-              {program.cancelled
-                ? '앞으로의 일정이 취소됐어요. 이미 남긴 기록은 그대로 볼 수 있어요.'
-                : isComplete
-                  ? '다섯 번째 모양까지 마쳤어요.'
-                  : activity
-                    ? `오늘은 ${rounds[completed].name}을 시작할 수 있어요.`
+            <p className={styles.status} role={justCompleted ? 'status' : undefined}>
+              {isComplete
+                ? `${rounds[rounds.length - 1].name}까지 마쳤어요.`
+                : program.cancelled
+                  ? '앞으로의 일정이 취소됐어요. 이미 남긴 기록은 그대로 볼 수 있어요.'
+                  : justCompleted
+                    ? `${justCompleted.name}을 마쳤어요.`
                     : currentSchedule?.rescheduled
                       ? `지난 활동을 놓쳐 ${rounds[completed].name}을 다음 선택 요일로 옮겼어요.`
-                      : `${rounds[completed].name}의 그림 주제는 활동 당일에 열려요.`}
+                      : activity
+                        ? `오늘은 ${rounds[completed].name}을 시작할 수 있어요.`
+                        : `${rounds[completed].name}의 그림 주제는 활동 당일에 열려요.`}
             </p>
           )}
         </section>
@@ -264,7 +289,7 @@ export const PersonalProgramPage = () => {
           completed={completed}
           activity={activity ?? null}
           isSetup={!program}
-          firstReflection={state?.firstReflection}
+          firstReflection={program?.firstReflection ?? reflection}
         />
 
         {(!program || editing) && (

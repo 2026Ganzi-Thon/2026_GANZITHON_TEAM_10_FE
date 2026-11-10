@@ -11,16 +11,25 @@ export const DrawingConversationPage = () => {
     drawing?: ConversationDrawing
     programActivity?: ProgramActivityHandoff
   } | null
-  const drawing = state?.drawing ?? (import.meta.env.DEV ? exampleDrawing : null)
   const scenario = import.meta.env.DEV ? new URLSearchParams(location.search).get('mock') : null
+  const previewDrawing =
+    scenario === 'wool' ? { ...exampleDrawing, drawingId: -10 } : exampleDrawing
+  const drawing = state?.drawing ?? (import.meta.env.DEV ? previewDrawing : null)
 
   if (!drawing) return <Navigate replace to="/drawing" />
 
+  const activity = state?.programActivity
+  const drawingKey = `moyang:mock-conversation:${drawing.drawingId}:${scenario ?? 'default'}`
+  const storageKey = activity
+    ? `${drawingKey}:${activity.mock ?? 'program'}:${activity.programId}:${activity.round}:${activity.date}`
+    : drawingKey
+
   return (
     <DrawingConversation
-      key={`${drawing.drawingId}:${scenario}`}
+      key={storageKey}
       drawing={drawing}
-      programActivity={state?.programActivity}
+      storageKey={storageKey}
+      programActivity={activity}
       isPreview={!state?.drawing}
       scenario={scenario}
       onBack={() => {

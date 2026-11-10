@@ -9,6 +9,7 @@ export type ConversationDrawing = {
 type Message = { role: 'assistant' | 'user'; text: string }
 
 export type Conversation = {
+  id?: string
   messages: Message[]
   questionIndex: number
   status: 'asking' | 'review' | 'support' | 'ended'
@@ -16,6 +17,29 @@ export type Conversation = {
 
 export type ConversationAction =
   { type: 'ANSWER'; text: string } | { type: 'DONT_KNOW' | 'SKIP' | 'CONTINUE' | 'END' }
+
+export const readConversation = (key: string): Conversation | null => {
+  try {
+    const saved = sessionStorage.getItem(key)
+    return saved ? JSON.parse(saved) : null
+  } catch {
+    return null
+  }
+}
+
+export const saveConversation = (key: string, conversation: Conversation | null) => {
+  try {
+    if (conversation) sessionStorage.setItem(key, JSON.stringify(conversation))
+    else sessionStorage.removeItem(key)
+  } catch {
+    return
+  }
+}
+
+export const discardConversation = (key: string, id?: string) => {
+  const saved = readConversation(key)
+  if (saved && saved.id === id) saveConversation(key, null)
+}
 
 const exampleImage = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">
   <path fill="#f4ecdf" d="M0 0h240v160H0z"/>
@@ -29,20 +53,6 @@ export const exampleDrawing: ConversationDrawing = {
   title: '내가 서 있는 자리',
   imageUrl: `data:image/svg+xml,${encodeURIComponent(exampleImage)}`,
   concern: { id: 'relationships', label: '대인관계' },
-}
-
-const drawingRewardKey = (drawingId: number) => `moyang:mock-drawing-reward:${drawingId}`
-
-export const earnDrawingReward = (drawingId: number) => {
-  const key = drawingRewardKey(drawingId)
-  if (sessionStorage.getItem(key) === null) sessionStorage.setItem(key, 'earned')
-}
-
-export const hasPendingDrawingReward = (drawingId: number) =>
-  sessionStorage.getItem(drawingRewardKey(drawingId)) === 'earned'
-
-export const confirmDrawingReward = (drawingId: number) => {
-  sessionStorage.setItem(drawingRewardKey(drawingId), 'confirmed')
 }
 
 const questions = [
@@ -88,6 +98,7 @@ const waitForResponse = (delay: number, fail: boolean) =>
 export const startConversation = async (fail: boolean): Promise<Conversation> => {
   await waitForResponse(900, fail)
   return {
+    id: crypto.randomUUID(),
     messages: [{ role: 'assistant', text: questions[0] }],
     questionIndex: 0,
     status: 'asking',
@@ -117,6 +128,7 @@ export const updateConversation = async (
   if (action.type === 'CONTINUE') {
     const text = extraQuestions[(questionIndex - questions.length + 1) % extraQuestions.length]
     return {
+      ...conversation,
       messages: [...messages, { role: 'assistant', text }],
       questionIndex: questionIndex + 1,
       status: 'asking',
@@ -130,6 +142,7 @@ export const updateConversation = async (
 
   const nextQuestion = questions[questionIndex + 1]
   return {
+    ...conversation,
     messages: [...messages, reply, { role: 'assistant', text: nextQuestion ?? reviewMessage }],
     questionIndex: nextQuestion ? questionIndex + 1 : questionIndex,
     status: nextQuestion ? 'asking' : 'review',

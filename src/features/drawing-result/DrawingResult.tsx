@@ -1,5 +1,6 @@
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useBlocker, useNavigate } from 'react-router-dom'
+import type { To } from 'react-router-dom'
 import backArrow from '@/assets/drawing-result/back-arrow.svg'
 import chevronDown from '@/assets/drawing-result/chevron-down.svg'
 import conversationChevron from '@/assets/drawing-result/conversation-chevron.svg'
@@ -9,32 +10,35 @@ import nextArrow from '@/assets/drawing-result/next-arrow.svg'
 import woolReward from '@/assets/drawing-result/wool-reward.png'
 import { Button, Modal } from '@/components'
 import { ConversationMessages } from '@/features/drawing-conversation/ConversationMessages'
-import {
-  confirmDrawingReward,
-  hasPendingDrawingReward,
-} from '@/features/drawing-conversation/conversationMock'
+import { discardConversation } from '@/features/drawing-conversation/conversationMock'
 import chatStyles from '@/features/drawing-conversation/DrawingConversation.module.css'
 import { useModal } from '@/hooks/useModal'
+import { readReflections } from '@/lib/mock-reflections'
+import type { MockRecord } from '@/lib/mock-reflections'
 import { completeProgramActivity } from '@/features/personal-program/programMock'
-import type { ProgramStartReflection } from '@/features/personal-program/programSchedule'
+import type { FirstReflection } from '@/features/personal-program/programSchedule'
 import { loadProgramConcern } from './programConcern'
-import { ReflectionSavedToastContext } from './reflectionSavedToast'
-import { createReflectionPreview, loadDrawingResult, saveDrawingResult } from './resultMock'
-import type { DrawingResultData, DrawingResultSource, MockRecord } from './resultMock'
+import {
+  createReflectionPreview,
+  getReflectionSaveStatus,
+  loadDrawingResult,
+  saveDrawingResult,
+} from './resultMock'
+import type { DrawingResultData, DrawingResultSource } from './resultMock'
 import styles from './DrawingResult.module.css'
 
 type DrawingResultProps = {
   source: DrawingResultSource | null
-  rewardDrawingId?: number
   scenario: string | null
   showConversation: boolean
   onOpenConversation: () => void
   onCloseConversation: () => void
+  onDiscard: () => void
 }
 
-type Destination = '/home' | '/sessions' | '/meetings'
-type SaveRequest = { destination: Destination; replaces?: MockRecord }
-type SaveConflict = { destination: Destination; record: MockRecord }
+type ExitDestination = '/home' | '/drawing' | '/sessions'
+type Destination = ExitDestination | '/meetings'
+type SaveFailure = { destination: Destination; recordSaved: boolean }
 
 const nextActivities = [
   {
@@ -51,39 +55,67 @@ const nextActivities = [
 
 export const DrawingResult = ({
   source,
-  rewardDrawingId,
   scenario,
   showConversation,
   onOpenConversation,
   onCloseConversation,
+  onDiscard,
 }: DrawingResultProps) => {
   const navigate = useNavigate()
-  const showSavedToast = useContext(ReflectionSavedToastContext)
   const [result, setResult] = useState<DrawingResultData | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [imageFailed, setImageFailed] = useState(false)
-  const [recordSaved, setRecordSaved] = useState(false)
   const [savingDestination, setSavingDestination] = useState<Destination | null>(null)
   const [concernFailed, setConcernFailed] = useState(false)
-  const [failedSave, setFailedSave] = useState<SaveRequest | null>(null)
-  const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null)
-  const [showReward, setShowReward] = useState(
-    () =>
-      scenario === 'reward' ||
-      (rewardDrawingId !== undefined && hasPendingDrawingReward(rewardDrawingId)),
-  )
+  const [failedSave, setFailedSave] = useState<SaveFailure | null>(null)
+  const [dailyLimitExit, setDailyLimitExit] = useState<ExitDestination | null>(null)
+  const [activityUnavailable, setActivityUnavailable] = useState(false)
+  const [reward, setReward] = useState<{ destination: Destination; amount: number } | null>(null)
   const { isOpen: showLeave, openModal: openLeave, closeModal: closeLeave } = useModal()
-  const activeSave = useRef<SaveRequest | null>(null)
-  const resolvedConcern = useRef<ProgramStartReflection['concern'] | undefined>(undefined)
+  const activeSave = useRef<AbortController | null>(null)
+  const saveHandled = useRef(false)
+  const savedReflection = useRef<MockRecord | undefined>(undefined)
+  const pendingReward = useRef<number | null>(null)
   const mockSaveFailed = useRef(false)
-  const preview = useRef(createReflectionPreview(scenario))
   const conversationButton = useRef<HTMLButtonElement>(null)
   const closeConversationButton = useRef<HTMLButtonElement>(null)
   const openedConversation = useRef(false)
   const isSaving = savingDestination !== null
   const programActivity = source?.programActivity
   const programScenario = import.meta.env.DEV ? programActivity?.mock : undefined
+  const previewWallet = scenario === 'wool' || scenario === 'wool-session'
+  const [preview] = useState(() => createReflectionPreview(scenario, source))
+  const readSaveStatus = () => {
+    if (!source) return null
+    try {
+      return getReflectionSaveStatus(
+        preview ?? readReflections(previewWallet),
+        source.drawing.drawingId,
+      )
+    } catch {
+      return null
+    }
+  }
+  const [recordSaved, setRecordSaved] = useState(() => readSaveStatus() === 'already-saved')
+  const savingLabel = recordSaved ? '이동 중…' : '기록 저장 중…'
+
+  const programUrl = programActivity
+    ? {
+        pathname: '/sessions',
+        search: new URLSearchParams({
+          programId: programActivity.programId,
+          ...(programScenario && { mock: programScenario }),
+        }).toString(),
+      }
+    : null
+  const backLabel = !source
+    ? '홈으로 돌아가기'
+    : programUrl
+      ? '모양으로 돌아가기'
+      : '그리기로 돌아가기'
+  const finishDestination = programActivity ? '/sessions' : '/home'
+  const backDestination = programActivity ? '/sessions' : '/drawing'
 
   useEffect(() => {
     if (!source || result) return
@@ -103,12 +135,7 @@ export const DrawingResult = ({
     }
   }, [source, scenario, loadAttempt, result])
 
-  useEffect(
-    () => () => {
-      activeSave.current = null
-    },
-    [],
-  )
+  useEffect(() => () => activeSave.current?.abort(), [])
 
   useLayoutEffect(() => {
     if (showConversation && result) {
@@ -120,95 +147,143 @@ export const DrawingResult = ({
     }
   }, [showConversation, result])
 
-  const goHome = () => navigate('/home', { replace: true })
-  const goToDrawing = () => navigate('/drawing', { replace: true })
-  const confirmReward = () => {
-    if (rewardDrawingId !== undefined) confirmDrawingReward(rewardDrawingId)
-    setShowReward(false)
+  const discardResult = () => {
+    onDiscard()
+    if (source?.conversationStorageKey) {
+      discardConversation(source.conversationStorageKey, source.conversation.id)
+    }
   }
-
-  const keepExistingRecord = ({ destination }: SaveConflict) => {
-    setSaveConflict(null)
-    if (destination !== '/sessions') navigate(destination, { replace: true })
+  const exitResult = (destination: To) => {
+    if (!recordSaved && readSaveStatus() !== 'already-saved') discardResult()
+    navigate(destination, { replace: true })
   }
+  const goHome = () => exitResult('/home')
+  const leaveResult = () => exitResult(programUrl ?? backDestination)
+  const handleBack = () => {
+    const status = readSaveStatus()
+    if (!recordSaved && status === 'daily-limit') {
+      setDailyLimitExit(backDestination)
+      return
+    }
+    if (status === 'already-saved') setRecordSaved(true)
+    openLeave()
+  }
+  const blocker = useBlocker(({ currentLocation, nextLocation, historyAction }) => {
+    const sameResult =
+      currentLocation.pathname === nextLocation.pathname &&
+      (currentLocation.state?.resultKey ?? currentLocation.key) ===
+        (nextLocation.state?.resultKey ?? nextLocation.key)
+    if (!source || historyAction !== 'POP' || sameResult || (recordSaved && !isSaving && !reward)) {
+      return false
+    }
+    if (!isSaving && !reward && !failedSave && !dailyLimitExit && !activityUnavailable) {
+      handleBack()
+    }
+    return true
+  })
 
-  const saveRecord = async (request: SaveRequest) => {
-    if (!result || activeSave.current || showReward) return
-    const { destination, replaces } = request
+  useEffect(() => {
+    if (blocker.state === 'blocked') blocker.reset()
+  }, [blocker])
 
-    activeSave.current = request
+  const saveRecord = async (destination: Destination) => {
+    if (!result || activeSave.current) return
+
+    const controller = new AbortController()
+    const { signal } = controller
+    activeSave.current = controller
     setSavingDestination(destination)
     setConcernFailed(false)
+    let savedBeforeFailure = recordSaved
 
     try {
-      let firstReflection: ProgramStartReflection | undefined
-      if (destination === '/sessions' && !programActivity) {
+      if (!saveHandled.current) {
+        const saved = await saveDrawingResult(result, {
+          preview,
+          previewWallet,
+          fail: scenario === 'save-error' && !mockSaveFailed.current,
+          signal,
+          activity: programActivity,
+        })
+        if (signal.aborted) return
+        setFailedSave(null)
+
+        if (saved.status === 'daily-limit') {
+          setDailyLimitExit(destination === '/drawing' ? '/drawing' : finishDestination)
+          return
+        }
+        if (saved.status === 'activity-unavailable') {
+          setActivityUnavailable(true)
+          return
+        }
+
+        savedBeforeFailure = true
+        const otherDrawingSaved =
+          saved.status === 'already-saved' &&
+          saved.record !== undefined &&
+          saved.record.drawingId !== result.drawing.drawingId
+        if (!otherDrawingSaved) setRecordSaved(true)
+        if (saved.status === 'saved') pendingReward.current = saved.sheepReward
+        else savedReflection.current = saved.record
+        if (programActivity) {
+          const canApplyProgress = saved.status === 'saved' || saved.record || preview
+          if (!canApplyProgress || !completeProgramActivity(programActivity, programScenario)) {
+            setActivityUnavailable(true)
+            return
+          }
+          if (otherDrawingSaved) discardResult()
+        }
+        saveHandled.current = true
+
+        if (pendingReward.current !== null) {
+          setReward({ destination, amount: pendingReward.current })
+          pendingReward.current = null
+          return
+        }
+      }
+
+      if (destination === '/sessions') {
+        if (programUrl && programActivity) {
+          navigate(programUrl, { replace: true, state: { completedRound: programActivity.round } })
+          return
+        }
+
         const concern =
-          result.drawing.concern ??
-          resolvedConcern.current ??
-          (await loadProgramConcern().catch(() => undefined))
-        if (activeSave.current !== request) return
+          result.drawing.concern ?? (await loadProgramConcern(signal).catch(() => undefined))
+        if (signal.aborted) return
         if (!concern) {
           setConcernFailed(true)
           return
         }
-        resolvedConcern.current = concern
-        firstReflection = {
+
+        const firstReflection: FirstReflection = {
           id: result.drawing.drawingId,
           concern,
-          title: result.drawing.title,
-          story: result.card.todaysStory,
+          title: savedReflection.current?.title ?? result.drawing.title,
+          story: savedReflection.current?.card?.todaysStory ?? result.card.todaysStory,
         }
-      }
-      const continueActivity = () => {
-        if (destination === '/sessions' && programActivity) {
-          const search = new URLSearchParams({ programId: programActivity.programId })
-          if (programScenario) search.set('mock', programScenario)
-          navigate({ pathname: destination, search: `?${search}` }, { replace: true })
-          return
-        }
-        navigate(destination, {
-          replace: true,
-          state: firstReflection ? { firstReflection } : undefined,
-        })
-      }
-
-      if (recordSaved) {
-        continueActivity()
+        navigate(
+          preview || previewWallet ? { pathname: destination, search: '?mock=setup' } : destination,
+          { replace: true, state: { firstReflection } },
+        )
         return
       }
 
-      const fail =
-        scenario === (replaces ? 'replace-error' : 'save-error') && !mockSaveFailed.current
-      const saved = await saveDrawingResult(result.drawing, {
-        preview: preview.current,
-        fail,
-        replaces,
-      })
-      if (activeSave.current !== request) return
-      setFailedSave(null)
-
-      if (saved.status === 'daily-limit') {
-        setSaveConflict({ destination, record: saved.record })
-        return
-      }
-
-      if (programActivity) completeProgramActivity(programActivity, programScenario)
-      setSaveConflict(null)
-      setRecordSaved(true)
-      if (saved.status === 'saved') showSavedToast?.()
-      continueActivity()
+      navigate(destination, { replace: true })
     } catch {
-      if (activeSave.current !== request) return
+      if (signal.aborted) return
       mockSaveFailed.current = true
-      setSaveConflict(null)
-      setFailedSave(request)
+      setFailedSave({ destination, recordSaved: savedBeforeFailure })
     } finally {
-      if (activeSave.current === request) {
-        activeSave.current = null
-        setSavingDestination(null)
-      }
+      activeSave.current = null
+      if (!signal.aborted) setSavingDestination(null)
     }
+  }
+
+  const confirmReward = () => {
+    if (!reward) return
+    setReward(null)
+    void saveRecord(reward.destination)
   }
 
   const detailItems = [
@@ -217,6 +292,8 @@ export const DrawingResult = ({
   ].filter(({ text }) => text)
   const imageUrl = imageFailed ? undefined : result?.drawing.imageUrl
   const isReadingConversation = showConversation && result !== null
+  const canSaveOnLeave = !recordSaved && result !== null
+  const failedLeavingForDrawing = failedSave?.destination === '/drawing'
 
   return (
     <>
@@ -225,9 +302,9 @@ export const DrawingResult = ({
           <button
             type="button"
             className={chatStyles.back}
-            aria-label="그리기로 돌아가기"
+            aria-label={backLabel}
             aria-haspopup={source ? 'dialog' : undefined}
-            onClick={source ? openLeave : goToDrawing}
+            onClick={source ? handleBack : goHome}
             disabled={isSaving}
           >
             <img src={backArrow} alt="" />
@@ -329,153 +406,185 @@ export const DrawingResult = ({
                 </section>
               )}
 
-              <section className={styles.next} aria-labelledby="result-next">
-                <h2 id="result-next" className="text-choice">
-                  오늘의 마음을 이어가 볼까요?
-                </h2>
-                <p className="text-caption">
-                  {recordSaved
-                    ? '이번 회고를 개인 기록에 저장했어요.'
-                    : '활동을 마치거나 이어가면 이번 회고를 개인 기록에 저장해요.'}
-                </p>
-                {nextActivities.map(({ destination, title, description }) => (
-                  <Button
-                    key={destination}
-                    className={styles.nextButton}
-                    color="gray"
-                    disabled={isSaving}
-                    aria-busy={savingDestination === destination}
-                    onClick={() => void saveRecord({ destination })}
-                  >
-                    <span>{title}</span>
-                    <span>{savingDestination === destination ? '기록 저장 중…' : description}</span>
-                    <img src={nextArrow} alt="" />
-                  </Button>
-                ))}
-                {concernFailed && (
-                  <p className="text-caption" role="alert">
-                    선택한 고민을 확인하지 못했어요. 잠시 후 다시 눌러 주세요.
+              {!programActivity && (
+                <section className={styles.next} aria-labelledby="result-next">
+                  <h2 id="result-next" className="text-choice">
+                    오늘의 마음을 이어가 볼까요?
+                  </h2>
+                  <p className="text-caption">
+                    {recordSaved
+                      ? '이미 저장한 회고예요. 양털은 처음 저장할 때 받아요.'
+                      : '하루 첫 회고만 개인 기록에 저장해요.'}
                   </p>
-                )}
-              </section>
+                  {nextActivities.map(({ destination, title, description }) => (
+                    <Button
+                      key={destination}
+                      className={styles.nextButton}
+                      color="gray"
+                      disabled={isSaving}
+                      aria-busy={savingDestination === destination}
+                      onClick={() => void saveRecord(destination)}
+                    >
+                      <span>{title}</span>
+                      <span>{savingDestination === destination ? savingLabel : description}</span>
+                      <img src={nextArrow} alt="" />
+                    </Button>
+                  ))}
+                  {concernFailed && (
+                    <p className="text-caption" role="alert">
+                      선택한 고민을 확인하지 못했어요. 잠시 후 다시 눌러 주세요.
+                    </p>
+                  )}
+                </section>
+              )}
 
-              {isSaving && !failedSave && !saveConflict && (
+              {isSaving && !failedSave && !dailyLimitExit && (
                 <p className={styles.saveStatus} role="status">
-                  기록을 저장하고 있어요.
+                  {recordSaved ? '다음 화면으로 이동하고 있어요.' : '기록을 저장하고 있어요.'}
                 </p>
               )}
               <Button
                 className={styles.finish}
-                onClick={() => void saveRecord({ destination: '/home' })}
+                onClick={() => void saveRecord(finishDestination)}
                 disabled={isSaving}
-                aria-busy={savingDestination === '/home'}
+                aria-busy={savingDestination === finishDestination}
               >
-                {savingDestination === '/home' ? '기록 저장 중…' : '오늘의 활동 마치기'}
+                {savingDestination === finishDestination ? savingLabel : '오늘의 활동 마치기'}
               </Button>
             </>
           )}
         </div>
+      </div>
 
-        <Modal
-          isOpen={showLeave}
-          onClose={closeLeave}
-          title="결과 화면을 나갈까요?"
-          actions={[
-            { label: '결과 계속 보기', color: 'gray', onClick: closeLeave },
-            { label: recordSaved ? '그리기로 돌아가기' : '저장 없이 나가기', onClick: goToDrawing },
-          ]}
-        >
-          {recordSaved
-            ? '이번 회고는 개인 기록에 남아 있어요.'
-            : '회고를 저장하려면 결과 화면 아래의 버튼을 눌러 주세요.'}
-        </Modal>
-
-        {failedSave && (
-          <div className={styles.saveErrorDialog}>
-            <Modal
-              isOpen
-              onClose={() => {
-                if (!isSaving) setFailedSave(null)
-              }}
-              title="기록을 저장하지 못했어요."
-              actions={[
-                {
-                  label: isSaving ? '저장 중…' : '다시 시도',
-                  onClick: () => void saveRecord(failedSave),
-                  disabled: isSaving,
+      <Modal
+        isOpen={showLeave}
+        onClose={closeLeave}
+        title={programActivity ? '모양으로 돌아갈까요?' : '결과 화면을 나갈까요?'}
+        actions={[
+          canSaveOnLeave
+            ? {
+                label: '저장하기',
+                onClick: () => {
+                  closeLeave()
+                  void saveRecord(backDestination)
                 },
-                { label: '저장 없이 홈으로', color: 'gray', onClick: goHome, disabled: isSaving },
-              ]}
-            >
-              {isSaving ? (
-                <p role="status">기록을 다시 저장하고 있어요.</p>
-              ) : (
-                '다시 시도하거나 홈으로 돌아갈 수 있어요.'
-              )}
-            </Modal>
-          </div>
-        )}
+              }
+            : { label: '결과 계속 보기', color: 'gray', onClick: closeLeave },
+          {
+            label: recordSaved ? backLabel : '저장하지 않고 나가기',
+            color: canSaveOnLeave ? 'gray' : 'green',
+            onClick: leaveResult,
+          },
+        ]}
+      >
+        {recordSaved
+          ? '이번 회고는 개인 기록에 남아 있어요.'
+          : canSaveOnLeave
+            ? '회고를 저장하실 건가요?'
+            : '결과를 불러온 뒤에 회고를 저장할 수 있어요.'}
+      </Modal>
 
-        {saveConflict && (
+      {failedSave && (
+        <div className={styles.saveErrorDialog}>
           <Modal
             isOpen
             onClose={() => {
-              if (!isSaving) setSaveConflict(null)
+              if (!isSaving) setFailedSave(null)
             }}
-            title="오늘의 기록을 바꿀까요?"
+            title={
+              failedSave.recordSaved
+                ? '활동 진행률을 반영하지 못했어요.'
+                : '기록을 저장하지 못했어요.'
+            }
             actions={[
               {
-                label: '기존 기록 유지',
-                color: 'gray',
+                label: isSaving ? '처리 중…' : '다시 시도',
+                onClick: () => void saveRecord(failedSave.destination),
                 disabled: isSaving,
-                onClick: () => keepExistingRecord(saveConflict),
               },
               {
-                label: isSaving ? '저장 중…' : '이번 회고로 교체',
+                label: programActivity
+                  ? '모양으로 돌아가기'
+                  : failedLeavingForDrawing
+                    ? '저장 없이 나가기'
+                    : failedSave.recordSaved
+                      ? '홈으로'
+                      : '저장 없이 홈으로',
+                color: 'gray',
+                onClick: programActivity || failedLeavingForDrawing ? leaveResult : goHome,
                 disabled: isSaving,
-                onClick: () =>
-                  void saveRecord({
-                    destination: saveConflict.destination,
-                    replaces: saveConflict.record,
-                  }),
               },
             ]}
           >
-            <div className={styles.conflictContent}>
-              <p>하루에 한 건을 기록할 수 있어요. 교체하면 오늘 기록에 이번 회고가 남아요.</p>
-              {saveConflict.record.title && <p>기존 기록 · {saveConflict.record.title}</p>}
-              <p>이번 회고 · {result?.drawing.title}</p>
-              {isSaving && <p role="status">오늘의 기록을 바꾸고 있어요.</p>}
+            {isSaving ? (
+              <p role="status">
+                {failedSave.recordSaved
+                  ? '활동 진행률을 다시 반영하고 있어요.'
+                  : '기록을 다시 저장하고 있어요.'}
+              </p>
+            ) : failedSave.recordSaved ? (
+              '회고는 저장했어요. 다시 시도하면 활동 진행률을 반영할 수 있어요.'
+            ) : programActivity ? (
+              '다시 시도하거나 모양 화면으로 돌아갈 수 있어요.'
+            ) : failedLeavingForDrawing ? (
+              '다시 시도하거나 그리기 화면으로 돌아갈 수 있어요.'
+            ) : (
+              '다시 시도하거나 홈으로 돌아갈 수 있어요.'
+            )}
+          </Modal>
+        </div>
+      )}
+
+      {dailyLimitExit && (
+        <Modal
+          isOpen
+          onClose={() => setDailyLimitExit(null)}
+          title="오늘의 회고는 이미 저장했어요."
+          actions={[
+            { label: '결과로 돌아가기', onClick: () => setDailyLimitExit(null) },
+            {
+              label: '저장 없이 나가기',
+              color: 'gray',
+              onClick: dailyLimitExit === '/home' ? goHome : leaveResult,
+            },
+          ]}
+        >
+          회고 저장과 양털 받기는 하루에 한 번만 가능해요.
+          <br />이 화면을 나가면 다시 볼 수 없어요.
+        </Modal>
+      )}
+
+      {activityUnavailable && (
+        <Modal
+          isOpen
+          onClose={() => setActivityUnavailable(false)}
+          title="이 회차를 완료할 수 없어요."
+          actions={[{ label: '모양으로 돌아가기', onClick: leaveResult }]}
+        >
+          모양 화면에서 현재 일정을 확인해 주세요.
+        </Modal>
+      )}
+
+      {reward && (
+        <div className={styles.rewardDialog}>
+          <Modal isOpen onClose={confirmReward} ariaLabel="회고 저장 및 양털 획득">
+            <div className={styles.reward}>
+              <div className={styles.rewardGraphic} tabIndex={-1} autoFocus>
+                <img src={woolReward} alt="" />
+                <h2 className={styles.rewardMessage}>
+                  <strong>양털 {reward.amount}개</strong>를
+                  <br />
+                  받았어요.
+                </h2>
+              </div>
+              <p className={styles.rewardNote}>오늘의 회고를 저장했어요.</p>
+              <Button className={styles.rewardConfirm} onClick={confirmReward}>
+                확인
+              </Button>
             </div>
           </Modal>
-        )}
-
-        {result && showReward && !isReadingConversation && (
-          <div className={styles.rewardDialog}>
-            <Modal isOpen onClose={confirmReward} ariaLabel="양털 1개를 획득했어요!">
-              <div className={styles.reward}>
-                <div className={styles.rewardGraphic} tabIndex={-1} autoFocus>
-                  <img src={woolReward} alt="" />
-                  <h2 className="text-heading">
-                    <strong>양털 1개</strong>를
-                    <br />
-                    획득했어요!
-                  </h2>
-                </div>
-                <p>
-                  그림을 한 번 완성할 때마다
-                  <br />
-                  양털을 모을 수 있어요.
-                </p>
-                <Button className={styles.rewardConfirm} onClick={confirmReward}>
-                  확인
-                </Button>
-              </div>
-            </Modal>
-          </div>
-        )}
-      </div>
-
+        </div>
+      )}
       {isReadingConversation && (
         <div className={chatStyles.page}>
           <header className={`${chatStyles.header} ${styles.historyHeader}`}>

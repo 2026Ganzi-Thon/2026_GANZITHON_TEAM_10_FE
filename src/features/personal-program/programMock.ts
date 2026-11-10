@@ -11,7 +11,16 @@ import {
 import type { FirstReflection, PersonalProgram, ProgramActivity } from './programSchedule'
 
 const storageKey = 'moyang:personal-programs'
-const scenarios = ['save-error', 'upcoming', 'today', 'missed', 'completed', 'home-list'] as const
+const scenarios = [
+  'setup',
+  'save-error',
+  'upcoming',
+  'today',
+  'final-round',
+  'missed',
+  'completed',
+  'home-list',
+] as const
 type Scenario = (typeof scenarios)[number]
 export type ProgramActivityHandoff = ProgramActivity & { mock?: Scenario }
 
@@ -24,7 +33,7 @@ export const getProgramScenario = (value: string | null) =>
   scenarios.find((scenario) => scenario === value)
 
 const examplePrograms = (scenario?: Scenario): PersonalProgram[] => {
-  if (!scenario || scenario === 'save-error') return []
+  if (!scenario || scenario === 'setup' || scenario === 'save-error') return []
 
   const today = getToday()
   if (scenario === 'home-list') {
@@ -41,7 +50,7 @@ const examplePrograms = (scenario?: Scenario): PersonalProgram[] => {
         firstReflection: { id: index, concern },
         days: [getWeekday(nextDate)],
         nextDate,
-        completed: index + 1,
+        completed: Math.min(index + 1, rounds.length - 1),
         cancelled: false,
       }
     })
@@ -50,14 +59,15 @@ const examplePrograms = (scenario?: Scenario): PersonalProgram[] => {
   const nextDate =
     scenario === 'completed'
       ? null
-      : addDays(today, { upcoming: 1, today: 0, missed: -3 }[scenario])
+      : addDays(today, { upcoming: 1, today: 0, 'final-round': 0, missed: -3 }[scenario])
+  const completed = scenario === 'completed' ? rounds.length : scenario === 'final-round' ? 2 : 1
   return [
     {
       id: 'example-program',
       firstReflection: exampleReflection,
       days: nextDate ? [getWeekday(nextDate), getWeekday(addDays(nextDate, 2))] : [],
       nextDate,
-      completed: scenario === 'completed' ? rounds.length : 1,
+      completed,
       cancelled: false,
     },
   ]
@@ -69,7 +79,12 @@ export const readPrograms = (scenario?: Scenario): PersonalProgram[] => {
   try {
     const saved = sessionStorage.getItem(keyFor(scenario))
     const programs: unknown = saved ? JSON.parse(saved) : null
-    return Array.isArray(programs) ? programs : examplePrograms(scenario)
+    if (!Array.isArray(programs)) return examplePrograms(scenario)
+    return programs.map((program: PersonalProgram) =>
+      program.completed >= rounds.length
+        ? { ...program, completed: rounds.length, nextDate: null }
+        : program,
+    )
   } catch {
     return examplePrograms(scenario)
   }
@@ -136,17 +151,22 @@ export const cancelProgramSchedule = (id: string, scenario?: Scenario) => {
   )
 }
 
+const isScheduledActivity = (program: PersonalProgram, activity: ProgramActivity, today: string) =>
+  activity.date <= today && getProgramActivity(program, activity.date)?.round === activity.round
+
+export const canCompleteProgramActivity = (activity: ProgramActivity, scenario?: Scenario) =>
+  readPrograms(scenario).some(
+    (program) =>
+      program.id === activity.programId && isScheduledActivity(program, activity, getToday()),
+  )
+
 export const completeProgramActivity = (activity: ProgramActivity, scenario?: Scenario) => {
   const programs = readPrograms(scenario)
   const program = programs.find(({ id }) => id === activity.programId)
   const today = getToday()
-  if (
-    !program ||
-    activity.date > today ||
-    getProgramActivity(program, activity.date)?.round !== activity.round
-  ) {
-    return
-  }
+  if (!program) return false
+  if (program.completed >= activity.round) return true
+  if (!isScheduledActivity(program, activity, today)) return false
 
   const completed = activity.round
   const nextDate = completed < rounds.length ? getNextActivityDate(program.days, today) : null
@@ -155,4 +175,5 @@ export const completeProgramActivity = (activity: ProgramActivity, scenario?: Sc
     programs.map((item) => (item.id === program.id ? { ...item, completed, nextDate } : item)),
     scenario,
   )
+  return true
 }
