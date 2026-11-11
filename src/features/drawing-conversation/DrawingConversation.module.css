@@ -198,6 +198,36 @@
   background: color-mix(in srgb, var(--color-primary) 50%, transparent);
 }
 
+.supportNotice {
+  display: grid;
+  justify-items: center;
+  margin-bottom: 20px;
+  color: color-mix(in srgb, var(--color-gray) 65%, var(--color-black));
+  text-align: center;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+.supportNotice p {
+  margin: 0;
+}
+
+.supportNotice a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 4px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.supportNotice a span {
+  padding-bottom: 2px;
+  background: url('./assets/support-underline.svg') repeat-x left bottom;
+}
+
 .feedback {
   margin: 0 0 12px var(--assistant-indent);
   font-size: var(--font-size-caption);

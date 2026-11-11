@@ -12,6 +12,7 @@ import { faClipboard, faCommentDots } from '@fortawesome/free-regular-svg-icons'
 import { Button, Modal } from '@/components'
 import { useModal } from '@/hooks/useModal'
 import { getWoolBalance, readReflections, spendWoolForQuestion } from '@/lib/mock-reflections'
+import { getMockStorageScope } from '@/lib/mock-storage'
 import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
 import { ConversationLoading } from './ConversationLoading'
 import { ConversationBubble, ConversationMessages } from './ConversationMessages'
@@ -29,6 +30,7 @@ import styles from './DrawingConversation.module.css'
 type DrawingConversationProps = {
   drawing: ConversationDrawing
   storageKey: string
+  storageScope: string
   programActivity?: ProgramActivityHandoff
   isPreview: boolean
   scenario: string | null
@@ -53,6 +55,7 @@ const isDialogBackdrop = ({ target, clientX, clientY }: MouseEvent<HTMLDivElemen
 export const DrawingConversation = ({
   drawing,
   storageKey,
+  storageScope,
   programActivity,
   isPreview,
   scenario,
@@ -92,7 +95,7 @@ export const DrawingConversation = ({
     let active = true
     startConversation(scenario === 'start-error' && startAttempt === 0).then(
       (started) => {
-        if (!active) return
+        if (!active || storageScope !== getMockStorageScope()) return
         saveConversation(storageKey, started)
         setConversation(started)
       },
@@ -104,7 +107,7 @@ export const DrawingConversation = ({
     return () => {
       active = false
     }
-  }, [conversation, scenario, startAttempt, storageKey])
+  }, [conversation, scenario, startAttempt, storageKey, storageScope])
 
   useEffect(() => () => request.current?.abort(), [])
 
@@ -140,7 +143,7 @@ export const DrawingConversation = ({
   }, [showReplies])
 
   const runAction = async (action: ConversationAction) => {
-    if (!conversation || request.current) return
+    if (!conversation || request.current || storageScope !== getMockStorageScope()) return
 
     const controller = new AbortController()
     const { signal } = controller
@@ -155,13 +158,13 @@ export const DrawingConversation = ({
 
     try {
       const updated = await updateConversation(conversation, action, fail, scenario === 'support')
-      if (signal.aborted) return
+      if (signal.aborted || storageScope !== getMockStorageScope()) return
 
       if (action.type === 'CONTINUE') {
         const questionId = `${conversation.id ?? drawing.drawingId}:${updated.questionIndex}`
         const paid =
           !isProgramPreview && (await spendWoolForQuestion(questionId, signal, previewWallet))
-        if (signal.aborted) return
+        if (signal.aborted || storageScope !== getMockStorageScope()) return
         setWoolBalance(readWoolBalance(isProgramPreview, previewWallet))
         if (!paid) {
           setWoolShortage(true)
@@ -189,7 +192,13 @@ export const DrawingConversation = ({
       <Navigate
         replace
         to={previewWallet ? '/drawing/result?mock=wool-session' : '/drawing/result'}
-        state={{ drawing, conversation, programActivity, conversationStorageKey: storageKey }}
+        state={{
+          drawing,
+          conversation,
+          programActivity,
+          storageScope,
+          conversationStorageKey: storageKey,
+        }}
       />
     )
   }
@@ -269,6 +278,9 @@ export const DrawingConversation = ({
           </div>
 
           <ConversationMessages messages={conversation.messages} ref={messageList}>
+            {conversation.status === 'support' && (
+              <ConversationBubble role="support" text={supportMessage} />
+            )}
             {pendingReply && <ConversationBubble role="user" text={pendingReply} />}
             {pending && (
               <p className={styles.feedback} role="status">
@@ -322,10 +334,6 @@ export const DrawingConversation = ({
                   </p>
                 )}
               </div>
-            )}
-
-            {conversation.status === 'support' && (
-              <ConversationBubble role="assistant" text={supportMessage} />
             )}
           </ConversationMessages>
 

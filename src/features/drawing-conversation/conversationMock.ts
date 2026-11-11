@@ -6,7 +6,7 @@ export type ConversationDrawing = {
   concern?: { id: string; label: string }
 }
 
-type Message = { role: 'assistant' | 'user'; text: string }
+type Message = { role: 'assistant' | 'user' | 'support'; text: string }
 
 export type Conversation = {
   id?: string
@@ -71,8 +71,7 @@ const extraQuestions = [
 const reviewMessage =
   '오늘 그림에 담긴 여러 이야기를 나눠봤어요.\n\n이제 오늘의 그림 이야기를 함께 정리해 볼까요?'
 
-export const supportMessage =
-  '지금은 그림 이야기를 잠시 쉬어도 괜찮아요. 혼자 감당하기 어렵다면 믿을 수 있는 사람이나 자살예방상담전화 109에 도움을 요청해 보세요.\n\n모양은 전문 상담을 대신할 수 없어요.'
+export const supportMessage = '지금 마음이 많이 힘들다면, 전문 상담사의 도움을 받을 수 있어요.'
 
 export const getReplyText = (action: ConversationAction) => {
   switch (action.type) {
@@ -119,7 +118,7 @@ export const updateConversation = async (
       ...conversation,
       messages:
         conversation.status === 'support'
-          ? [...messages, { role: 'assistant', text: supportMessage }]
+          ? [...messages, { role: 'support', text: supportMessage }]
           : messages,
       status: 'ended',
     }

@@ -5,6 +5,7 @@ import { faArrowLeft, faCircleInfo } from '@fortawesome/free-solid-svg-icons'
 import { Button, HomeLayout, Modal, SheepProfile } from '@/components'
 import { exampleDrawing } from '@/features/drawing-conversation/conversationMock'
 import { useModal } from '@/hooks/useModal'
+import { useMockStorageScope } from '@/hooks/useMockStorageScope'
 import {
   PersonalProgramHomeSection,
   ProgramProgress,
@@ -35,13 +36,16 @@ type SessionLocation = {
   firstReflection?: FirstReflection
   programActivity?: ProgramActivityHandoff
   completedRound?: number
+  storageScope?: string
 }
 
 export const PersonalProgramPage = () => {
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const state = location.state as SessionLocation | null
+  const storageScope = useMockStorageScope()
+  const handoff = location.state as SessionLocation | null
+  const state = storageScope && handoff?.storageScope === storageScope ? handoff : null
   const mockScenario = import.meta.env.DEV ? getProgramScenario(params.get('mock')) : undefined
   const id = params.get('programId')
   const view = params.get('view')
@@ -117,7 +121,7 @@ export const PersonalProgramPage = () => {
       return
     }
     navigate(sessionsUrl({ view: 'activity', programId: programActivity.programId }), {
-      state: { programActivity },
+      state: { programActivity, storageScope },
     })
   }
 
@@ -206,13 +210,16 @@ export const PersonalProgramPage = () => {
                     concern: activity.concern,
                   },
                   programActivity: { ...activity, mock: scenario },
+                  storageScope,
                 }}
               >
                 예시 그림으로 대화하기
               </Link>
             ) : (
               <Button
-                onClick={() => navigate('/drawing', { state: { programActivity: activity } })}
+                onClick={() =>
+                  navigate('/drawing', { state: { programActivity: activity, storageScope } })
+                }
               >
                 이 주제로 그림 그리기
               </Button>

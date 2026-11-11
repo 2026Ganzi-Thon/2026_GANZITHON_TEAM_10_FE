@@ -15,6 +15,7 @@ import chatStyles from '@/features/drawing-conversation/DrawingConversation.modu
 import { useModal } from '@/hooks/useModal'
 import { readReflections } from '@/lib/mock-reflections'
 import type { MockRecord } from '@/lib/mock-reflections'
+import { getMockStorageScope } from '@/lib/mock-storage'
 import { completeProgramActivity } from '@/features/personal-program/programMock'
 import type { FirstReflection } from '@/features/personal-program/programSchedule'
 import { loadProgramConcern } from './programConcern'
@@ -29,6 +30,7 @@ import styles from './DrawingResult.module.css'
 
 type DrawingResultProps = {
   source: DrawingResultSource | null
+  storageScope: string | null
   scenario: string | null
   showConversation: boolean
   onOpenConversation: () => void
@@ -55,6 +57,7 @@ const nextActivities = [
 
 export const DrawingResult = ({
   source,
+  storageScope,
   scenario,
   showConversation,
   onOpenConversation,
@@ -187,7 +190,7 @@ export const DrawingResult = ({
   }, [blocker])
 
   const saveRecord = async (destination: Destination) => {
-    if (!result || activeSave.current) return
+    if (!result || activeSave.current || storageScope !== getMockStorageScope()) return
 
     const controller = new AbortController()
     const { signal } = controller
@@ -205,7 +208,7 @@ export const DrawingResult = ({
           signal,
           activity: programActivity,
         })
-        if (signal.aborted) return
+        if (signal.aborted || storageScope !== getMockStorageScope()) return
         setFailedSave(null)
 
         if (saved.status === 'daily-limit') {
@@ -244,13 +247,16 @@ export const DrawingResult = ({
 
       if (destination === '/sessions') {
         if (programUrl && programActivity) {
-          navigate(programUrl, { replace: true, state: { completedRound: programActivity.round } })
+          navigate(programUrl, {
+            replace: true,
+            state: { completedRound: programActivity.round, storageScope },
+          })
           return
         }
 
         const concern =
           result.drawing.concern ?? (await loadProgramConcern(signal).catch(() => undefined))
-        if (signal.aborted) return
+        if (signal.aborted || storageScope !== getMockStorageScope()) return
         if (!concern) {
           setConcernFailed(true)
           return
@@ -264,7 +270,7 @@ export const DrawingResult = ({
         }
         navigate(
           preview || previewWallet ? { pathname: destination, search: '?mock=setup' } : destination,
-          { replace: true, state: { firstReflection } },
+          { replace: true, state: { firstReflection, storageScope } },
         )
         return
       }

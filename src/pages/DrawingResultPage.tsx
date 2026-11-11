@@ -2,8 +2,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { DrawingResult } from '@/features/drawing-result/DrawingResult'
 import { exampleResultSource } from '@/features/drawing-result/resultMock'
 import type { DrawingResultSource } from '@/features/drawing-result/resultMock'
+import { useMockStorageScope } from '@/hooks/useMockStorageScope'
 
-type ResultLocationState = DrawingResultSource & { resultKey?: string }
+type ResultLocationState = DrawingResultSource & { resultKey?: string; storageScope?: string }
 
 const discardedResultKey = (key: string) => `moyang:discarded-drawing-result:${key}`
 
@@ -18,22 +19,29 @@ const isDiscarded = (key: string) => {
 export const DrawingResultPage = () => {
   const location = useLocation()
   const navigate = useNavigate()
+  const storageScope = useMockStorageScope()
   const state = location.state as ResultLocationState | null
-  const finishedResult = state?.drawing && state.conversation?.status === 'ended' ? state : null
+  const finishedResult =
+    storageScope && state?.storageScope === storageScope && state.conversation?.status === 'ended'
+      ? state
+      : null
   const scenario = import.meta.env.DEV ? new URLSearchParams(location.search).get('mock') : null
   const resultKey = state?.resultKey ?? location.key
-  const source =
-    finishedResult && isDiscarded(resultKey)
-      ? null
-      : (finishedResult ??
-        (import.meta.env.DEV && scenario !== 'missing-result' ? exampleResultSource : null))
+  const source = state?.drawing
+    ? finishedResult && !isDiscarded(resultKey)
+      ? finishedResult
+      : null
+    : import.meta.env.DEV && storageScope && scenario !== 'missing-result'
+      ? exampleResultSource
+      : null
 
   const showConversation = location.hash === '#conversation'
 
   return (
     <DrawingResult
-      key={resultKey}
+      key={`${storageScope}:${resultKey}`}
       source={source}
+      storageScope={storageScope}
       scenario={scenario}
       showConversation={showConversation}
       onOpenConversation={() =>

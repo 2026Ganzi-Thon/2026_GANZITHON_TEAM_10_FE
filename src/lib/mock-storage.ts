@@ -14,3 +14,11 @@ export const getMockStorageKey = (key: string) => {
 
   return `${key}:user:${encodeURIComponent(String(sub))}`
 }
+
+export const getMockStorageScope = () => {
+  try {
+    return getMockStorageKey('moyang')
+  } catch {
+    return null
+  }
+}
