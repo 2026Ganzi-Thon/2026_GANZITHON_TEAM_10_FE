@@ -1,3 +1,5 @@
+import { getMockStorageKey } from './mock-storage'
+
 export type ReflectionCard = {
   todaysStory: string
   whatISaid?: string
@@ -23,21 +25,26 @@ const recordsKey = 'moyang:mock-reflection-records'
 const previewRecordsKey = `${recordsKey}:wool-preview`
 
 export const readReflections = (preview = false): MockReflectionStore => {
-  const saved = localStorage.getItem(preview ? previewRecordsKey : recordsKey)
+  const saved = localStorage.getItem(getMockStorageKey(preview ? previewRecordsKey : recordsKey))
   if (saved) return JSON.parse(saved)
 
-  const legacy = preview ? null : sessionStorage.getItem(recordsKey)
+  const legacy = preview ? null : sessionStorage.getItem(getMockStorageKey(recordsKey))
   const data: MockReflectionStore | MockRecord[] = legacy ? JSON.parse(legacy) : []
-  if (!Array.isArray(data)) return data
-
-  return {
-    records: data,
-    completedDrawingIds: data.map(({ drawingId }) => drawingId),
+  const store = Array.isArray(data)
+    ? { records: data, completedDrawingIds: data.map(({ drawingId }) => drawingId) }
+    : data
+  if (legacy) {
+    writeReflections(store)
+    sessionStorage.removeItem(getMockStorageKey(recordsKey))
   }
+  return store
 }
 
 export const writeReflections = (store: MockReflectionStore, preview = false) =>
-  localStorage.setItem(preview ? previewRecordsKey : recordsKey, JSON.stringify(store))
+  localStorage.setItem(
+    getMockStorageKey(preview ? previewRecordsKey : recordsKey),
+    JSON.stringify(store),
+  )
 
 export const hasSavedReflection = (store: MockReflectionStore, drawingId: number) =>
   store.completedDrawingIds.includes(drawingId) ||
@@ -50,8 +57,14 @@ export const getWoolBalance = (store = readReflections()) => {
 
 export const withReflectionLock = <T>(signal: AbortSignal, update: () => T): Promise<T> => {
   signal.throwIfAborted()
-  if (!window.navigator.locks) return Promise.resolve(update())
-  return window.navigator.locks.request(recordsKey, { signal }, update)
+  const storageKey = getMockStorageKey(recordsKey)
+  const applyUpdate = () => {
+    signal.throwIfAborted()
+    if (storageKey !== getMockStorageKey(recordsKey)) throw new Error('로그인 정보가 변경됐어요')
+    return update()
+  }
+  if (!window.navigator.locks) return Promise.resolve(applyUpdate())
+  return window.navigator.locks.request(storageKey, { signal }, applyUpdate)
 }
 
 export const spendWoolForQuestion = (questionId: string, signal: AbortSignal, preview = false) =>

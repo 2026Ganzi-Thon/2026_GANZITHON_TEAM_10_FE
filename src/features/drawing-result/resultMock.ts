@@ -5,6 +5,7 @@ import {
   writeReflections,
 } from '@/lib/mock-reflections'
 import type { MockRecord, MockReflectionStore, ReflectionCard } from '@/lib/mock-reflections'
+import { getMockStorageKey } from '@/lib/mock-storage'
 import { exampleDrawing, getReplyText } from '@/features/drawing-conversation/conversationMock'
 import type {
   Conversation,
@@ -160,8 +161,12 @@ export const saveDrawingResult = async (
     activity?: ProgramActivityHandoff
   },
 ): Promise<SaveOutcome> => {
+  const accountKey = getMockStorageKey('moyang:mock-reflection-records')
   await new Promise((resolve) => window.setTimeout(resolve, 500))
   signal.throwIfAborted()
+  if (accountKey !== getMockStorageKey('moyang:mock-reflection-records')) {
+    throw new Error('로그인 정보가 변경됐어요')
+  }
   if (fail) throw new Error('Mock record save failed')
 
   const save = (): SaveOutcome => {

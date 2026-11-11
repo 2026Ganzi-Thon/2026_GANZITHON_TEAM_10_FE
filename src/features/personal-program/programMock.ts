@@ -1,3 +1,4 @@
+import { getMockStorageKey } from '@/lib/mock-storage'
 import {
   addDays,
   getActivitySchedule,
@@ -73,25 +74,34 @@ const examplePrograms = (scenario?: Scenario): PersonalProgram[] => {
   ]
 }
 
-const keyFor = (scenario?: Scenario) => (scenario ? `${storageKey}:${scenario}` : storageKey)
+const keyFor = (scenario?: Scenario) =>
+  getMockStorageKey(scenario ? `${storageKey}:${scenario}` : storageKey)
 
 export const readPrograms = (scenario?: Scenario): PersonalProgram[] => {
   try {
-    const saved = sessionStorage.getItem(keyFor(scenario))
+    const key = keyFor(scenario)
+    const local = localStorage.getItem(key)
+    const saved = local ?? sessionStorage.getItem(key)
     const programs: unknown = saved ? JSON.parse(saved) : null
     if (!Array.isArray(programs)) return examplePrograms(scenario)
-    return programs.map((program: PersonalProgram) =>
+    const normalized = programs.map((program: PersonalProgram) =>
       program.completed >= rounds.length
         ? { ...program, completed: rounds.length, nextDate: null }
         : program,
     )
+    if (local === null && saved) {
+      localStorage.setItem(key, JSON.stringify(normalized))
+      sessionStorage.removeItem(key)
+    }
+    return normalized
   } catch {
     return examplePrograms(scenario)
   }
 }
 
 const storePrograms = (programs: PersonalProgram[], scenario?: Scenario) => {
-  sessionStorage.setItem(keyFor(scenario), JSON.stringify(programs))
+  localStorage.setItem(keyFor(scenario), JSON.stringify(programs))
+  sessionStorage.removeItem(keyFor(scenario))
 }
 
 export const saveProgramSchedule = async ({
@@ -109,8 +119,10 @@ export const saveProgramSchedule = async ({
   signal: AbortSignal
   scenario?: Scenario
 }) => {
+  const accountKey = keyFor(scenario)
   await new Promise((resolve) => window.setTimeout(resolve, 350))
   signal.throwIfAborted()
+  if (accountKey !== keyFor(scenario)) throw new Error('로그인 정보가 변경됐어요')
   if (fail) throw new Error('일정 저장 실패')
 
   const programs = readPrograms(scenario)
@@ -152,7 +164,7 @@ export const cancelProgramSchedule = (id: string, scenario?: Scenario) => {
 }
 
 const isScheduledActivity = (program: PersonalProgram, activity: ProgramActivity, today: string) =>
-  activity.date <= today && getProgramActivity(program, activity.date)?.round === activity.round
+  activity.date === today && getProgramActivity(program, today)?.round === activity.round
 
 export const canCompleteProgramActivity = (activity: ProgramActivity, scenario?: Scenario) =>
   readPrograms(scenario).some(
