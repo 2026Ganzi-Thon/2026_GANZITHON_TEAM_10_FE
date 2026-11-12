@@ -72,6 +72,7 @@ export const DrawingConversation = ({
   const [startFailed, setStartFailed] = useState(false)
   const [input, setInput] = useState('')
   const [showReplies, setShowReplies] = useState(false)
+  const [confirmation, setConfirmation] = useState<'end' | 'leave' | null>(null)
   const { isOpen: isDrawingOpen, openModal: openDrawing, closeModal: closeDrawing } = useModal()
   const [pending, setPending] = useState<ConversationAction | null>(null)
   const [retry, setRetry] = useState<ConversationAction | null>(null)
@@ -85,6 +86,7 @@ export const DrawingConversation = ({
   const restoreReplyFocus = useRef(false)
   const isAsking = conversation?.status === 'asking'
   const isPending = pending !== null
+  const closeConfirmation = () => setConfirmation(null)
 
   useEffect(() => {
     earnDrawingReward(drawing.drawingId)
@@ -191,7 +193,14 @@ export const DrawingConversation = ({
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <button className={styles.back} type="button" onClick={onBack} aria-label="뒤로 가기">
+        <button
+          className={styles.back}
+          type="button"
+          disabled={pending?.type === 'END'}
+          aria-label="뒤로 가기"
+          aria-haspopup="dialog"
+          onClick={() => setConfirmation('leave')}
+        >
           <FontAwesomeIcon icon={faArrowLeft} />
         </button>
         {conversation && (
@@ -199,12 +208,32 @@ export const DrawingConversation = ({
             className={styles.end}
             type="button"
             disabled={isPending}
-            onClick={() => void runAction({ type: 'END' })}
+            aria-haspopup="dialog"
+            onClick={() => setConfirmation('end')}
           >
             대화 종료
           </button>
         )}
       </header>
+
+      <Modal
+        isOpen={confirmation !== null}
+        onClose={closeConfirmation}
+        title={confirmation === 'end' ? '대화를 여기까지 할까요?' : '대화에서 나갈까요?'}
+        actions={[
+          { label: '계속 대화하기', color: 'gray', onClick: closeConfirmation },
+          {
+            label: confirmation === 'end' ? '종료하고 결과 보기' : '나가기',
+            onClick: () => {
+              closeConfirmation()
+              if (confirmation === 'end') void runAction({ type: 'END' })
+              else if (confirmation === 'leave') onBack()
+            },
+          },
+        ]}
+      >
+        {confirmation === 'leave' && input.trim() && '작성 중인 답변은 전송되지 않아요.'}
+      </Modal>
 
       {conversation ? (
         <>

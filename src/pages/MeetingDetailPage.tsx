@@ -1,8 +1,3 @@
-/**
- * 그림 나눔 모임 상세 화면을 담당한다.
- *
- * @returns 페이지 요소 또는 화면 구현 전 null
- */
-export const MeetingDetailPage = () => {
-  return null
-}
+import { MeetingHandoff } from '@/features/meeting-list/MeetingHandoff'
+
+export const MeetingDetailPage = () => <MeetingHandoff />
