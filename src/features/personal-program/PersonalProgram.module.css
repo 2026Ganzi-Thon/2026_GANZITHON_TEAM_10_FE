@@ -47,8 +47,8 @@
 }
 
 .headline {
-  font-size: 26px;
-  font-weight: 800;
+  font-size: 25px;
+  font-weight: 700;
   line-height: 1.2;
   word-break: keep-all;
 }
@@ -158,7 +158,8 @@
 
 .timelineSection .setupTimeline {
   gap: 0;
-  margin-top: 8px;
+  margin-top: 18px;
+  margin-bottom: 12px;
   padding: 0;
 }
 
@@ -429,7 +430,6 @@
 .actions button {
   min-height: 44px;
   padding-inline: 8px;
-  font-size: var(--font-size-body);
 }
 
 .formActions button:disabled,

@@ -11,42 +11,38 @@ import {
 import { faClipboard, faCommentDots } from '@fortawesome/free-regular-svg-icons'
 import { Button, Modal } from '@/components'
 import { useModal } from '@/hooks/useModal'
+import { getWoolBalance, readReflections, spendWoolForQuestion } from '@/lib/mock-reflections'
+import { getMockStorageScope } from '@/lib/mock-storage'
 import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
 import { ConversationLoading } from './ConversationLoading'
 import { ConversationBubble, ConversationMessages } from './ConversationMessages'
 import {
-  earnDrawingReward,
   getReplyText,
+  readConversation,
+  saveConversation,
   startConversation,
   supportMessage,
   updateConversation,
 } from './conversationMock'
-import type { Conversation, ConversationAction, ConversationDrawing } from './conversationMock'
+import type { ConversationAction, ConversationDrawing } from './conversationMock'
 import styles from './DrawingConversation.module.css'
 
 type DrawingConversationProps = {
   drawing: ConversationDrawing
+  storageKey: string
+  storageScope: string
   programActivity?: ProgramActivityHandoff
   isPreview: boolean
   scenario: string | null
   onBack: () => void
 }
 
-const readConversation = (key: string): Conversation | null => {
+const readWoolBalance = (isProgramPreview: boolean, previewWallet: boolean) => {
+  if (isProgramPreview) return 0
   try {
-    const saved = sessionStorage.getItem(key)
-    return saved ? JSON.parse(saved) : null
+    return getWoolBalance(readReflections(previewWallet))
   } catch {
     return null
-  }
-}
-
-const saveConversation = (key: string, conversation: Conversation | null) => {
-  try {
-    if (conversation) sessionStorage.setItem(key, JSON.stringify(conversation))
-    else sessionStorage.removeItem(key)
-  } catch {
-    return
   }
 }
 
@@ -58,12 +54,15 @@ const isDialogBackdrop = ({ target, clientX, clientY }: MouseEvent<HTMLDivElemen
 
 export const DrawingConversation = ({
   drawing,
+  storageKey,
+  storageScope,
   programActivity,
   isPreview,
   scenario,
   onBack,
 }: DrawingConversationProps) => {
-  const storageKey = `moyang:mock-conversation:${drawing.drawingId}:${scenario ?? 'default'}`
+  const isProgramPreview = Boolean(programActivity?.mock)
+  const previewWallet = scenario === 'wool'
   const [conversation, setConversation] = useState(() => {
     const saved = readConversation(storageKey)
     return isPreview && saved?.status === 'ended' ? null : saved
@@ -75,7 +74,11 @@ export const DrawingConversation = ({
   const { isOpen: isDrawingOpen, openModal: openDrawing, closeModal: closeDrawing } = useModal()
   const [pending, setPending] = useState<ConversationAction | null>(null)
   const [retry, setRetry] = useState<ConversationAction | null>(null)
-  const request = useRef<ConversationAction | null>(null)
+  const [woolBalance, setWoolBalance] = useState(() =>
+    readWoolBalance(isProgramPreview, previewWallet),
+  )
+  const [woolShortage, setWoolShortage] = useState(false)
+  const request = useRef<AbortController | null>(null)
   const startedOnBackdrop = useRef(false)
   const mockFailed = useRef(false)
   const messageList = useRef<HTMLDivElement>(null)
@@ -87,16 +90,12 @@ export const DrawingConversation = ({
   const isPending = pending !== null
 
   useEffect(() => {
-    earnDrawingReward(drawing.drawingId)
-  }, [drawing.drawingId])
-
-  useEffect(() => {
     if (conversation || scenario === 'loading') return
 
     let active = true
     startConversation(scenario === 'start-error' && startAttempt === 0).then(
       (started) => {
-        if (!active) return
+        if (!active || storageScope !== getMockStorageScope()) return
         saveConversation(storageKey, started)
         setConversation(started)
       },
@@ -108,19 +107,20 @@ export const DrawingConversation = ({
     return () => {
       active = false
     }
-  }, [conversation, scenario, startAttempt, storageKey])
+  }, [conversation, scenario, startAttempt, storageKey, storageScope])
 
-  useEffect(
-    () => () => {
-      request.current = null
-    },
-    [],
-  )
+  useEffect(() => () => request.current?.abort(), [])
+
+  useEffect(() => {
+    const syncBalance = () => setWoolBalance(readWoolBalance(isProgramPreview, previewWallet))
+    window.addEventListener('storage', syncBalance)
+    return () => window.removeEventListener('storage', syncBalance)
+  }, [isProgramPreview, previewWallet])
 
   useLayoutEffect(() => {
     const list = messageList.current
     if (list) list.scrollTop = list.scrollHeight
-  }, [conversation, pending, retry, showReplies])
+  }, [conversation, pending, retry, showReplies, woolShortage])
 
   useLayoutEffect(() => {
     if (showReplies) {
@@ -143,11 +143,14 @@ export const DrawingConversation = ({
   }, [showReplies])
 
   const runAction = async (action: ConversationAction) => {
-    if (!conversation || request.current) return
+    if (!conversation || request.current || storageScope !== getMockStorageScope()) return
 
-    request.current = action
+    const controller = new AbortController()
+    const { signal } = controller
+    request.current = controller
     setPending(action)
     setRetry(null)
+    setWoolShortage(false)
     setShowReplies(false)
 
     const isEnd = action.type === 'END'
@@ -155,17 +158,29 @@ export const DrawingConversation = ({
 
     try {
       const updated = await updateConversation(conversation, action, fail, scenario === 'support')
-      if (request.current !== action) return
+      if (signal.aborted || storageScope !== getMockStorageScope()) return
+
+      if (action.type === 'CONTINUE') {
+        const questionId = `${conversation.id ?? drawing.drawingId}:${updated.questionIndex}`
+        const paid =
+          !isProgramPreview && (await spendWoolForQuestion(questionId, signal, previewWallet))
+        if (signal.aborted || storageScope !== getMockStorageScope()) return
+        setWoolBalance(readWoolBalance(isProgramPreview, previewWallet))
+        if (!paid) {
+          setWoolShortage(true)
+          return
+        }
+      }
 
       saveConversation(storageKey, isPreview && isEnd ? null : updated)
       setConversation(updated)
       if (getReplyText(action)) setInput('')
     } catch {
-      if (request.current !== action) return
+      if (signal.aborted) return
       mockFailed.current = true
       setRetry(action)
     } finally {
-      if (request.current === action) {
+      if (request.current === controller) {
         request.current = null
         setPending(null)
       }
@@ -174,7 +189,17 @@ export const DrawingConversation = ({
 
   if (conversation?.status === 'ended') {
     return (
-      <Navigate replace to="/drawing/result" state={{ drawing, conversation, programActivity }} />
+      <Navigate
+        replace
+        to={previewWallet ? '/drawing/result?mock=wool-session' : '/drawing/result'}
+        state={{
+          drawing,
+          conversation,
+          programActivity,
+          storageScope,
+          conversationStorageKey: storageKey,
+        }}
+      />
     )
   }
 
@@ -253,6 +278,9 @@ export const DrawingConversation = ({
           </div>
 
           <ConversationMessages messages={conversation.messages} ref={messageList}>
+            {conversation.status === 'support' && (
+              <ConversationBubble role="support" text={supportMessage} />
+            )}
             {pendingReply && <ConversationBubble role="user" text={pendingReply} />}
             {pending && (
               <p className={styles.feedback} role="status">
@@ -289,14 +317,23 @@ export const DrawingConversation = ({
                   onClick={() => void runAction({ type: 'CONTINUE' })}
                 >
                   <FontAwesomeIcon icon={faCommentDots} />
-                  조금 더 이야기하고 싶어요
+                  <span>
+                    조금 더 이야기하고 싶어요
+                    <small>양털 1개가 소모돼요.</small>
+                  </span>
                   <FontAwesomeIcon icon={faChevronRight} />
                 </Button>
+                <p className={styles.woolBalance} aria-live="polite">
+                  {woolBalance === null
+                    ? '보유 양털을 확인할 수 없어요.'
+                    : `보유 양털 ${woolBalance}개`}
+                </p>
+                {woolShortage && (
+                  <p className={styles.woolShortage} role="status">
+                    양털이 부족해요. ‘내 그림 정리하기’로 대화를 마칠 수 있어요.
+                  </p>
+                )}
               </div>
-            )}
-
-            {conversation.status === 'support' && (
-              <ConversationBubble role="assistant" text={supportMessage} />
             )}
           </ConversationMessages>
 

@@ -104,7 +104,7 @@ export const ProgramScheduleForm = ({
       )}
       {failed && (
         <p role="alert" className={styles.error}>
-          일정을 저장하지 못했어요. 선택한 요일은 그대로예요.
+          일정을 저장하지 못했어요. 다시 시도해 주세요.
         </p>
       )}
       <div className={styles.formActions}>

@@ -20,23 +20,15 @@ export const rounds = [
     topic: '편안함을 느끼는 순간',
     description: '누군가와 함께 있으면서 마음이 편안했던 순간을 그려 보세요.',
   },
-  {
-    name: '네 번째 모양',
-    label: '나에게 필요한 것',
-    topic: '마음을 위한 작은 부탁',
-    description: '관계 속에서 지금 내게 필요한 것을 그림으로 표현해 보세요.',
-  },
-  {
-    name: '다섯 번째 모양',
-    label: '앞으로의 나',
-    topic: '앞으로의 나에게',
-    description: '앞으로 사람들과 어떤 관계를 만들어 가고 싶은지 그려 보세요.',
-  },
 ] as const
 
 export type ProgramConcern = { id: string; label: string }
-export type FirstReflection = { id: number; concern: ProgramConcern }
-export type ProgramStartReflection = FirstReflection & { title: string; story: string }
+export type FirstReflection = {
+  id: number
+  concern: ProgramConcern
+  title?: string
+  story?: string
+}
 
 export type PersonalProgram = {
   id: string

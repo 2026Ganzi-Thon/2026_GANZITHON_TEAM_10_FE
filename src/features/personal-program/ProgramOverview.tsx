@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarDays, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
 import { readPrograms } from './programMock'
 import { formatActivityDate, formatWeekdays, getActivitySchedule, rounds } from './programSchedule'
-import type { PersonalProgram, ProgramActivity, ProgramStartReflection } from './programSchedule'
+import type { FirstReflection, PersonalProgram, ProgramActivity } from './programSchedule'
 import { useProgramToday } from './useProgramToday'
 import styles from './PersonalProgram.module.css'
 
@@ -56,7 +56,7 @@ export const ProgramTimeline = ({
   completed: number
   activity: ProgramActivity | null
   isSetup: boolean
-  firstReflection?: ProgramStartReflection
+  firstReflection?: FirstReflection
 }) => (
   <section
     className={
