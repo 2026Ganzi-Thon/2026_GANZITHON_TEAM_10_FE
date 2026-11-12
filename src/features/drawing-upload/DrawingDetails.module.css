@@ -34,6 +34,11 @@
   margin-top: 16px;
 }
 
+.uploadedNote {
+  margin: 0;
+  font-size: var(--font-size-caption);
+}
+
 .actions {
   width: min(256px, 100%);
   margin: auto auto 0;

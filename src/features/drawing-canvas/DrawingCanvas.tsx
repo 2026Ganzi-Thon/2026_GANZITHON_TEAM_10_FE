@@ -47,7 +47,7 @@ export const DrawingCanvas = () => {
       )
       const photo = new Blob([bytes], { type: 'image/png' })
       navigate(`/drawing/details${search}`, {
-        state: { ...state, photo, paths, inputType: 'CANVAS' },
+        state: { ...state, photo, paths, inputType: 'CANVAS', uploaded: undefined },
       })
     } catch {
       setExportError('그림을 준비하지 못했어요. 다시 시도해 주세요.')

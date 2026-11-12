@@ -13,12 +13,13 @@ export const DrawingDetails = () => {
     photo?: Blob
     inputType?: 'PHOTO' | 'UPLOAD' | 'CANVAS'
     topic?: { topicId: number }
+    uploaded?: { drawingId: number; activityId: number; title: string; note: string }
   } | null
   const photo = data?.photo
   const isPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('preview')
   const imageRef = useRef<HTMLImageElement>(null)
-  const [title, setTitle] = useState('')
-  const [thought, setThought] = useState('')
+  const [title, setTitle] = useState(data?.uploaded?.title ?? '')
+  const [thought, setThought] = useState(data?.uploaded?.note ?? '')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [pending, setPending] = useState(false)
@@ -44,7 +45,7 @@ export const DrawingDetails = () => {
       setNotice('떠오른 생각은 200자 이내로 입력해 주세요.')
       return
     }
-    if (!isPreview && (!data?.topic?.topicId || !data.inputType)) {
+    if (!isPreview && !data?.uploaded && (!data?.topic?.topicId || !data.inputType)) {
       setNotice('그림 주제 정보를 찾을 수 없어요. 이전 화면에서 다시 시작해 주세요.')
       return
     }
@@ -52,9 +53,9 @@ export const DrawingDetails = () => {
     setPending(true)
     setNotice('')
     try {
-      let drawingId = 0
-      let activityId: number | undefined
-      if (!isPreview && data?.topic && data.inputType && photo instanceof Blob) {
+      let drawingId = data?.uploaded?.drawingId ?? 0
+      let activityId: number | undefined = data?.uploaded?.activityId
+      if (!isPreview && !data?.uploaded && data?.topic && data.inputType && photo instanceof Blob) {
         const body = new FormData()
         body.append('image', photo, photo instanceof File ? photo.name : 'drawing.jpg')
         body.append('inputType', data.inputType)
@@ -68,6 +69,13 @@ export const DrawingDetails = () => {
           throw new Error('upload failed')
         drawingId = response.data.data.drawingId
         activityId = response.data.data.activityId
+        await navigate(`${location.pathname}${location.search}`, {
+          replace: true,
+          state: {
+            ...data,
+            uploaded: { drawingId, activityId, title: title.trim(), note: thought.trim() },
+          },
+        })
       }
       navigate(`/drawing/conversation${isPreview ? '?preview' : ''}`, {
         state: {
@@ -123,8 +131,12 @@ export const DrawingDetails = () => {
             id="drawing-thought"
             label="그림을 그리며 떠오른 생각 (선택)"
             value={thought}
+            readOnly={Boolean(data?.uploaded)}
             onChange={(event) => setThought(event.target.value)}
           />
+          {data?.uploaded && (
+            <p className={styles.uploadedNote}>업로드한 그림의 생각은 수정할 수 없어요.</p>
+          )}
         </div>
         <div className={styles.actions}>
           {notice && <p role="status">{notice}</p>}
