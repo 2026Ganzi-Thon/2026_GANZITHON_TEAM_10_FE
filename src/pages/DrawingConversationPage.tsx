@@ -6,7 +6,7 @@ import type { ConversationDrawing } from '@/features/drawing-conversation/conver
 export const DrawingConversationPage = () => {
   const location = useLocation()
   const navigate = useNavigate()
-  const state = location.state as { drawing?: ConversationDrawing } | null
+  const state = location.state as { drawing?: ConversationDrawing; activityId?: number } | null
   const drawing = state?.drawing ?? (import.meta.env.DEV ? exampleDrawing : null)
   const scenario = import.meta.env.DEV ? new URLSearchParams(location.search).get('mock') : null
 
@@ -16,6 +16,7 @@ export const DrawingConversationPage = () => {
     <DrawingConversation
       key={`${drawing.drawingId}:${scenario}`}
       drawing={drawing}
+      activityId={state?.activityId}
       isPreview={!state?.drawing}
       scenario={scenario}
       onBack={() => {

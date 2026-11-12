@@ -25,6 +25,7 @@ import styles from './DrawingConversation.module.css'
 
 type DrawingConversationProps = {
   drawing: ConversationDrawing
+  activityId?: number
   isPreview: boolean
   scenario: string | null
   onBack: () => void
@@ -56,6 +57,7 @@ const isDialogBackdrop = ({ target, clientX, clientY }: MouseEvent<HTMLDivElemen
 
 export const DrawingConversation = ({
   drawing,
+  activityId,
   isPreview,
   scenario,
   onBack,
@@ -170,7 +172,7 @@ export const DrawingConversation = ({
   }
 
   if (conversation?.status === 'ended') {
-    return <Navigate replace to="/drawing/result" state={{ drawing, conversation }} />
+    return <Navigate replace to="/drawing/result" state={{ drawing, conversation, activityId }} />
   }
 
   const pendingReply = pending ? getReplyText(pending) : ''

@@ -7,6 +7,7 @@ import type {
 export type DrawingResultSource = {
   drawing: ConversationDrawing
   conversation: Conversation
+  activityId?: number
 }
 
 export type DrawingResultData = {

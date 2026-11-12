@@ -5,6 +5,9 @@ import { apiClient } from '@/lib/api-client'
 import previewImage from '@/assets/drawing/drawing-2.png'
 import styles from './DrawingDetails.module.css'
 
+const isValidId = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+
 /** 선택한 그림을 확인하고 제목과 떠오른 생각을 입력한다. */
 export const DrawingDetails = () => {
   const navigate = useNavigate()
@@ -13,7 +16,7 @@ export const DrawingDetails = () => {
     photo?: Blob
     inputType?: 'PHOTO' | 'UPLOAD' | 'CANVAS'
     topic?: { topicId: number }
-    uploaded?: { drawingId: number; activityId: number; title: string; note: string }
+    uploaded?: { drawingId?: number; activityId?: number; title: string; note: string }
   } | null
   const photo = data?.photo
   const isPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('preview')
@@ -21,7 +24,14 @@ export const DrawingDetails = () => {
   const [title, setTitle] = useState(data?.uploaded?.title ?? '')
   const [thought, setThought] = useState(data?.uploaded?.note ?? '')
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const invalidUpload =
+    !!data?.uploaded &&
+    (!isValidId(data.uploaded.drawingId) || !isValidId(data.uploaded.activityId))
+  const [notice, setNotice] = useState(
+    invalidUpload
+      ? '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.'
+      : '',
+  )
   const [pending, setPending] = useState(false)
   const submitting = useRef(false)
 
@@ -37,6 +47,7 @@ export const DrawingDetails = () => {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (submitting.current) return
+    if (invalidUpload) return
     if (!title.trim()) {
       setError('그림 제목을 입력해 주세요.')
       return
@@ -65,17 +76,30 @@ export const DrawingDetails = () => {
           success: boolean
           data: { drawingId: number; activityId: number }
         }>('/api/drawings', body)
-        if (!response.data.success || !Number.isInteger(response.data.data?.drawingId))
-          throw new Error('upload failed')
-        drawingId = response.data.data.drawingId
-        activityId = response.data.data.activityId
+        if (!response.data.success) throw new Error('upload failed')
+        const uploaded = response.data.data
+        const validDrawingId = isValidId(uploaded?.drawingId) ? uploaded.drawingId : undefined
+        const validActivityId = isValidId(uploaded?.activityId) ? uploaded.activityId : undefined
         await navigate(`${location.pathname}${location.search}`, {
           replace: true,
           state: {
             ...data,
-            uploaded: { drawingId, activityId, title: title.trim(), note: thought.trim() },
+            uploaded: {
+              drawingId: validDrawingId,
+              activityId: validActivityId,
+              title: title.trim(),
+              note: thought.trim(),
+            },
           },
         })
+        if (!validDrawingId || !validActivityId) {
+          setNotice(
+            '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.',
+          )
+          return
+        }
+        drawingId = validDrawingId
+        activityId = validActivityId
       }
       navigate(`/drawing/conversation${isPreview ? '?preview' : ''}`, {
         state: {
@@ -124,7 +148,7 @@ export const DrawingDetails = () => {
             onChange={(event) => {
               setTitle(event.target.value)
               setError('')
-              setNotice('')
+              if (!invalidUpload) setNotice('')
             }}
           />
           <Input
@@ -140,7 +164,7 @@ export const DrawingDetails = () => {
         </div>
         <div className={styles.actions}>
           {notice && <p role="status">{notice}</p>}
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || invalidUpload}>
             {pending ? '그림을 올리고 있어요' : '그림 이야기 시작하기'}
           </Button>
         </div>

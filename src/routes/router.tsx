@@ -27,14 +27,43 @@ import { RecordsPage } from '@/pages/RecordsPage'
 import { RecordDetailPage } from '@/pages/RecordDetailPage'
 import { MyPage } from '@/pages/MyPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
-import { getAccessToken } from '@/lib/api-client'
+import { RootEntryError } from '@/pages/RootEntryError'
+import axios from 'axios'
+import { apiClient, getAccessToken, setAccessToken } from '@/lib/api-client'
 import { isOnboardingPreview } from '@/features/onboarding'
 
 export const router = createBrowserRouter([
   {
     element: <RootLayout />,
     children: [
-      { path: '/', loader: () => redirect(getAccessToken() ? '/home' : '/onboarding') },
+      {
+        path: '/',
+        loader: async ({ request }) => {
+          if (!getAccessToken()) return redirect('/onboarding')
+          try {
+            const { data } = await apiClient.get<{
+              success: boolean
+              data: { onboarding: object | null } | null
+            }>('/api/users/me', { signal: request.signal })
+            if (
+              !data.success ||
+              !data.data ||
+              (data.data.onboarding !== null &&
+                (typeof data.data.onboarding !== 'object' || Array.isArray(data.data.onboarding)))
+            )
+              throw new Error('Invalid response')
+            return redirect(data.data.onboarding === null ? '/onboarding/profile' : '/home')
+          } catch (error) {
+            if (request.signal.aborted) throw error
+            if (axios.isAxiosError(error) && error.response?.status === 401) {
+              setAccessToken(null)
+              return redirect('/login')
+            }
+            throw error
+          }
+        },
+        errorElement: <RootEntryError />,
+      },
       { path: '/onboarding', element: <StartPage /> },
       {
         path: '/login',
