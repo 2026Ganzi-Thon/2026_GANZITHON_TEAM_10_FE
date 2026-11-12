@@ -1,4 +1,9 @@
-import { getMockStorageKey } from '@/lib/mock-storage'
+import {
+  getMockStorageKey,
+  migrateLegacyMockKey,
+  readMockStorage,
+  writeMockStorage,
+} from '@/lib/mock-storage'
 import {
   addDays,
   getActivitySchedule,
@@ -74,34 +79,45 @@ const examplePrograms = (scenario?: Scenario): PersonalProgram[] => {
   ]
 }
 
-const keyFor = (scenario?: Scenario) =>
-  getMockStorageKey(scenario ? `${storageKey}:${scenario}` : storageKey)
+const unscopedKeyFor = (scenario?: Scenario) =>
+  scenario ? `${storageKey}:${scenario}` : storageKey
+const keyFor = (scenario?: Scenario) => getMockStorageKey(unscopedKeyFor(scenario))
+
+const parsePrograms = (saved: string): PersonalProgram[] => {
+  const programs = JSON.parse(saved) as PersonalProgram[] | null
+  if (!Array.isArray(programs)) throw new Error('저장된 일정 형식을 확인할 수 없어요')
+  return programs.map((program) =>
+    program.completed >= rounds.length
+      ? { ...program, completed: rounds.length, nextDate: null }
+      : program,
+  )
+}
+
+export const migrateLegacyPrograms = (accountSuffix: string) => {
+  for (const scenario of [undefined, ...scenarios]) {
+    migrateLegacyMockKey(
+      unscopedKeyFor(scenario),
+      accountSuffix,
+      parsePrograms,
+      (current, legacy) => [
+        ...new Map([...legacy, ...current].map((program) => [program.id, program])).values(),
+      ],
+    )
+  }
+}
 
 export const readPrograms = (scenario?: Scenario): PersonalProgram[] => {
   try {
-    const key = keyFor(scenario)
-    const local = localStorage.getItem(key)
-    const saved = local ?? sessionStorage.getItem(key)
-    const programs: unknown = saved ? JSON.parse(saved) : null
-    if (!Array.isArray(programs)) return examplePrograms(scenario)
-    const normalized = programs.map((program: PersonalProgram) =>
-      program.completed >= rounds.length
-        ? { ...program, completed: rounds.length, nextDate: null }
-        : program,
-    )
-    if (local === null && saved) {
-      localStorage.setItem(key, JSON.stringify(normalized))
-      sessionStorage.removeItem(key)
-    }
-    return normalized
+    return readMockStorage(keyFor(scenario), parsePrograms) ?? examplePrograms(scenario)
   } catch {
     return examplePrograms(scenario)
   }
 }
 
 const storePrograms = (programs: PersonalProgram[], scenario?: Scenario) => {
-  localStorage.setItem(keyFor(scenario), JSON.stringify(programs))
-  sessionStorage.removeItem(keyFor(scenario))
+  const key = keyFor(scenario)
+  writeMockStorage(key, programs)
+  sessionStorage.removeItem(key)
 }
 
 export const saveProgramSchedule = async ({

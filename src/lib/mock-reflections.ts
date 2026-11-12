@@ -1,4 +1,10 @@
-import { getMockStorageKey } from './mock-storage'
+import {
+  getMockStorageKey,
+  migrateLegacyMockKey,
+  mockStorageLock,
+  readMockStorage,
+  writeMockStorage,
+} from './mock-storage'
 
 export type ReflectionCard = {
   todaysStory: string
@@ -24,27 +30,51 @@ export type MockReflectionStore = {
 const recordsKey = 'moyang:mock-reflection-records'
 const previewRecordsKey = `${recordsKey}:wool-preview`
 
-export const readReflections = (preview = false): MockReflectionStore => {
-  const saved = localStorage.getItem(getMockStorageKey(preview ? previewRecordsKey : recordsKey))
-  if (saved) return JSON.parse(saved)
-
-  const legacy = preview ? null : sessionStorage.getItem(getMockStorageKey(recordsKey))
-  const data: MockReflectionStore | MockRecord[] = legacy ? JSON.parse(legacy) : []
-  const store = Array.isArray(data)
-    ? { records: data, completedDrawingIds: data.map(({ drawingId }) => drawingId) }
-    : data
-  if (legacy) {
-    writeReflections(store)
-    sessionStorage.removeItem(getMockStorageKey(recordsKey))
+const parseReflections = (saved: string): MockReflectionStore => {
+  const data = JSON.parse(saved) as MockReflectionStore | MockRecord[] | null
+  if (Array.isArray(data)) {
+    return { records: data, completedDrawingIds: data.map(({ drawingId }) => drawingId) }
   }
-  return store
+  if (!Array.isArray(data?.records) || !Array.isArray(data.completedDrawingIds)) {
+    throw new Error('저장된 회고 형식을 확인할 수 없어요')
+  }
+  return data
 }
 
-export const writeReflections = (store: MockReflectionStore, preview = false) =>
-  localStorage.setItem(
-    getMockStorageKey(preview ? previewRecordsKey : recordsKey),
-    JSON.stringify(store),
+const mergeReflections = (
+  current: MockReflectionStore,
+  legacy: MockReflectionStore,
+): MockReflectionStore => {
+  const records = new Map(
+    [...legacy.records, ...current.records].map((record) => [record.recordDate, record]),
   )
+  return {
+    records: [...records.values()],
+    completedDrawingIds: [
+      ...new Set([...legacy.completedDrawingIds, ...current.completedDrawingIds]),
+    ],
+    paidQuestions: [
+      ...new Set([...(legacy.paidQuestions ?? []), ...(current.paidQuestions ?? [])]),
+    ],
+  }
+}
+
+export const migrateLegacyReflections = (accountSuffix: string) => {
+  migrateLegacyMockKey(recordsKey, accountSuffix, parseReflections, mergeReflections)
+  migrateLegacyMockKey(previewRecordsKey, accountSuffix, parseReflections, mergeReflections)
+}
+
+export const readReflections = (preview = false): MockReflectionStore =>
+  readMockStorage(
+    getMockStorageKey(preview ? previewRecordsKey : recordsKey),
+    parseReflections,
+  ) ?? {
+    records: [],
+    completedDrawingIds: [],
+  }
+
+export const writeReflections = (store: MockReflectionStore, preview = false) =>
+  writeMockStorage(getMockStorageKey(preview ? previewRecordsKey : recordsKey), store)
 
 export const hasSavedReflection = (store: MockReflectionStore, drawingId: number) =>
   store.completedDrawingIds.includes(drawingId) ||
@@ -64,7 +94,7 @@ export const withReflectionLock = <T>(signal: AbortSignal, update: () => T): Pro
     return update()
   }
   if (!window.navigator.locks) return Promise.resolve(applyUpdate())
-  return window.navigator.locks.request(storageKey, { signal }, applyUpdate)
+  return window.navigator.locks.request(mockStorageLock, { signal }, applyUpdate)
 }
 
 export const spendWoolForQuestion = (questionId: string, signal: AbortSignal, preview = false) =>
