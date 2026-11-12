@@ -1,0 +1,111 @@
+.page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-white);
+}
+
+.content {
+  width: min(325px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.illustration {
+  width: min(280px, 100%);
+  margin: 16px auto 36px;
+}
+
+.artwork {
+  width: 100%;
+  aspect-ratio: 252 / 112;
+  overflow: hidden;
+}
+
+.artwork img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.guide {
+  position: relative;
+  margin: 10px 0 0;
+  padding: 10px 8px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  color: var(--color-primary);
+  background: var(--color-white);
+  font-family: GeuriunYeeun, sans-serif;
+  font-size: var(--font-size-choice);
+  line-height: 1.4;
+  text-align: center;
+}
+
+.guide::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: calc(50% - 7px);
+  width: 12px;
+  height: 12px;
+  border-top: 1px solid var(--color-primary);
+  border-left: 1px solid var(--color-primary);
+  background: var(--color-white);
+  transform: rotate(45deg);
+}
+
+.topic,
+.methods {
+  border-radius: 12px;
+  padding: 10px 20px;
+}
+
+.topic {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.topic p,
+.topic h1,
+.methods p,
+.methods h2 {
+  margin: 0;
+}
+
+.methods {
+  margin-top: 36px;
+  border: 1px solid var(--color-primary);
+  padding: 20px;
+}
+
+.methods .description {
+  margin-top: 8px;
+}
+
+.choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+  text-align: center;
+}
+
+.choices button {
+  padding-inline: 4px;
+  white-space: nowrap;
+}
+
+.choices .selected {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.choices p {
+  margin-top: 8px;
+}
+
+.actions {
+  width: min(256px, calc(100% - 48px));
+  margin: auto auto 28px;
+  padding-top: 12px;
+}
