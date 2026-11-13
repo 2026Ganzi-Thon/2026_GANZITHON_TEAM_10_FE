@@ -86,7 +86,14 @@ export const DrawingCamera = () => {
         if (photo)
           navigate(`/drawing/details${search}`, {
             replace: true,
-            state: { ...state, photo, inputType: 'PHOTO', uploaded: undefined },
+            state: {
+              ...state,
+              photo,
+              inputType: 'PHOTO',
+              uploaded: undefined,
+              draft: undefined,
+              draftId: undefined,
+            },
           })
         else setError('사진을 만들 수 없어요. 다시 시도해 주세요.')
       },

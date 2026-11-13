@@ -26,7 +26,14 @@ export const DrawingUpload = () => {
       return
     }
     navigate(`/drawing/details${search}`, {
-      state: { ...state, photo: selected, inputType: 'UPLOAD', uploaded: undefined },
+      state: {
+        ...state,
+        photo: selected,
+        inputType: 'UPLOAD',
+        uploaded: undefined,
+        draft: undefined,
+        draftId: undefined,
+      },
     })
   }
 

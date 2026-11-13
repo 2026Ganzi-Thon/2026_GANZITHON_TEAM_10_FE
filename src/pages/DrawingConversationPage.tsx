@@ -17,6 +17,7 @@ export const DrawingConversationPage = () => {
       key={`${drawing.drawingId}:${scenario}`}
       drawing={drawing}
       activityId={state?.activityId}
+      resultState={state ?? undefined}
       isPreview={!state?.drawing}
       scenario={scenario}
       onBack={() => {

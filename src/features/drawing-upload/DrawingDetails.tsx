@@ -8,6 +8,12 @@ import styles from './DrawingDetails.module.css'
 const isValidId = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 
+type UploadedDrawing = { drawingId?: number; activityId?: number; title: string; note: string }
+
+// 화면을 떠난 뒤 완료된 업로드도 같은 그림으로 돌아오면 재사용한다.
+const completedUploads = new Map<string, UploadedDrawing>()
+const pendingUploads = new Map<string, Promise<UploadedDrawing>>()
+
 /** 선택한 그림을 확인하고 제목과 떠오른 생각을 입력한다. */
 export const DrawingDetails = () => {
   const navigate = useNavigate()
@@ -16,17 +22,20 @@ export const DrawingDetails = () => {
     photo?: Blob
     inputType?: 'PHOTO' | 'UPLOAD' | 'CANVAS'
     topic?: { topicId: number }
-    uploaded?: { drawingId?: number; activityId?: number; title: string; note: string }
+    uploaded?: UploadedDrawing
+    draft?: { title: string; note: string }
+    draftId?: string
   } | null
   const photo = data?.photo
+  const uploaded =
+    data?.uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined)
   const isPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('preview')
   const imageRef = useRef<HTMLImageElement>(null)
-  const [title, setTitle] = useState(data?.uploaded?.title ?? '')
-  const [thought, setThought] = useState(data?.uploaded?.note ?? '')
+  const [title, setTitle] = useState(data?.draft?.title ?? uploaded?.title ?? '')
+  const [thought, setThought] = useState(data?.draft?.note ?? uploaded?.note ?? '')
   const [error, setError] = useState('')
   const invalidUpload =
-    !!data?.uploaded &&
-    (!isValidId(data.uploaded.drawingId) || !isValidId(data.uploaded.activityId))
+    !!uploaded && (!isValidId(uploaded.drawingId) || !isValidId(uploaded.activityId))
   const [notice, setNotice] = useState(
     invalidUpload
       ? '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.'
@@ -34,6 +43,14 @@ export const DrawingDetails = () => {
   )
   const [pending, setPending] = useState(false)
   const submitting = useRef(false)
+  const active = useRef(true)
+
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!(photo instanceof Blob)) return
@@ -47,7 +64,17 @@ export const DrawingDetails = () => {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (submitting.current) return
-    if (invalidUpload) return
+    const currentUpload =
+      uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined)
+    if (
+      currentUpload &&
+      (!isValidId(currentUpload.drawingId) || !isValidId(currentUpload.activityId))
+    ) {
+      setNotice(
+        '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.',
+      )
+      return
+    }
     if (!title.trim()) {
       setError('그림 제목을 입력해 주세요.')
       return
@@ -56,7 +83,7 @@ export const DrawingDetails = () => {
       setNotice('떠오른 생각은 200자 이내로 입력해 주세요.')
       return
     }
-    if (!isPreview && !data?.uploaded && (!data?.topic?.topicId || !data.inputType)) {
+    if (!isPreview && !currentUpload && (!data?.topic?.topicId || !data.inputType)) {
       setNotice('그림 주제 정보를 찾을 수 없어요. 이전 화면에서 다시 시작해 주세요.')
       return
     }
@@ -64,32 +91,54 @@ export const DrawingDetails = () => {
     setPending(true)
     setNotice('')
     try {
-      let drawingId = data?.uploaded?.drawingId ?? 0
-      let activityId: number | undefined = data?.uploaded?.activityId
-      if (!isPreview && !data?.uploaded && data?.topic && data.inputType && photo instanceof Blob) {
+      const draft = { title: title.trim(), note: currentUpload?.note ?? thought.trim() }
+      const draftId = data?.draftId ?? crypto.randomUUID()
+      await navigate(`${location.pathname}${location.search}`, {
+        replace: true,
+        state: { ...data, draft, draftId, uploaded: currentUpload },
+      })
+      if (!active.current) return
+      let drawingId = currentUpload?.drawingId ?? 0
+      let activityId: number | undefined = currentUpload?.activityId
+      if (!isPreview && !currentUpload && data?.topic && data.inputType && photo instanceof Blob) {
         const body = new FormData()
         body.append('image', photo, photo instanceof File ? photo.name : 'drawing.jpg')
         body.append('inputType', data.inputType)
         body.append('topicId', String(data.topic.topicId))
         if (thought.trim()) body.append('note', thought.trim())
-        const response = await apiClient.post<{
-          success: boolean
-          data: { drawingId: number; activityId: number }
-        }>('/api/drawings', body)
-        if (!response.data.success) throw new Error('upload failed')
-        const uploaded = response.data.data
-        const validDrawingId = isValidId(uploaded?.drawingId) ? uploaded.drawingId : undefined
-        const validActivityId = isValidId(uploaded?.activityId) ? uploaded.activityId : undefined
+        let upload = pendingUploads.get(draftId)
+        if (!upload) {
+          upload = apiClient
+            .post<{ success: boolean; data: { drawingId: number; activityId: number } }>(
+              '/api/drawings',
+              body,
+            )
+            .then((response) => {
+              if (!response.data.success) throw new Error('upload failed')
+              const result = response.data.data
+              const saved = {
+                drawingId: isValidId(result?.drawingId) ? result.drawingId : undefined,
+                activityId: isValidId(result?.activityId) ? result.activityId : undefined,
+                ...draft,
+              }
+              completedUploads.set(draftId, saved)
+              return saved
+            })
+            .finally(() => pendingUploads.delete(draftId))
+          pendingUploads.set(draftId, upload)
+        }
+        const saved = await upload
+        draft.note = saved.note
+        const validDrawingId = saved.drawingId
+        const validActivityId = saved.activityId
+        if (!active.current) return
         await navigate(`${location.pathname}${location.search}`, {
           replace: true,
           state: {
             ...data,
-            uploaded: {
-              drawingId: validDrawingId,
-              activityId: validActivityId,
-              title: title.trim(),
-              note: thought.trim(),
-            },
+            draft,
+            draftId,
+            uploaded: saved,
           },
         })
         if (!validDrawingId || !validActivityId) {
@@ -101,22 +150,25 @@ export const DrawingDetails = () => {
         drawingId = validDrawingId
         activityId = validActivityId
       }
+      if (!active.current) return
       navigate(`/drawing/conversation${isPreview ? '?preview' : ''}`, {
         state: {
+          ...data,
           drawing: {
             drawingId,
             title: title.trim(),
-            note: thought.trim(),
+            note: draft.note,
             imageUrl: photo instanceof Blob ? URL.createObjectURL(photo) : previewImage,
           },
           activityId,
         },
       })
     } catch {
-      setNotice('그림을 업로드하지 못했어요. 연결 상태와 입력 내용을 확인해 주세요.')
+      if (active.current)
+        setNotice('그림을 업로드하지 못했어요. 연결 상태와 입력 내용을 확인해 주세요.')
     } finally {
       submitting.current = false
-      setPending(false)
+      if (active.current) setPending(false)
     }
   }
 
@@ -155,10 +207,10 @@ export const DrawingDetails = () => {
             id="drawing-thought"
             label="그림을 그리며 떠오른 생각 (선택)"
             value={thought}
-            readOnly={Boolean(data?.uploaded)}
+            readOnly={Boolean(uploaded)}
             onChange={(event) => setThought(event.target.value)}
           />
-          {data?.uploaded && (
+          {uploaded && (
             <p className={styles.uploadedNote}>업로드한 그림의 생각은 수정할 수 없어요.</p>
           )}
         </div>
