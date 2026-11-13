@@ -1,8 +1,19 @@
-/**
- * 맞춤 회기 추천 화면을 담당한다.
- *
- * @returns 페이지 요소 또는 화면 구현 전 null
- */
+import { useLayoutEffect, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
+import { PersonalProgramPage } from '@/features/personal-program/PersonalProgramPage'
+import styles from '@/features/personal-program/PersonalProgram.module.css'
+
 export const SessionsPage = () => {
-  return null
+  const { key } = useLocation()
+  const pageRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    pageRef.current?.scrollIntoView({ block: 'start' })
+  }, [key])
+
+  return (
+    <div className={styles.route} ref={pageRef}>
+      <PersonalProgramPage key={key} />
+    </div>
+  )
 }

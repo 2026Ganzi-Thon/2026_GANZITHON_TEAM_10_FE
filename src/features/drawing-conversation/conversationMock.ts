@@ -3,11 +3,13 @@ export type ConversationDrawing = {
   title: string
   imageUrl?: string
   note?: string | null
+  concern?: { id: string; label: string }
 }
 
-type Message = { role: 'assistant' | 'user'; text: string }
+type Message = { role: 'assistant' | 'user' | 'support'; text: string }
 
 export type Conversation = {
+  id?: string
   messages: Message[]
   questionIndex: number
   status: 'asking' | 'review' | 'support' | 'ended'
@@ -15,6 +17,29 @@ export type Conversation = {
 
 export type ConversationAction =
   { type: 'ANSWER'; text: string } | { type: 'DONT_KNOW' | 'SKIP' | 'CONTINUE' | 'END' }
+
+export const readConversation = (key: string): Conversation | null => {
+  try {
+    const saved = sessionStorage.getItem(key)
+    return saved ? JSON.parse(saved) : null
+  } catch {
+    return null
+  }
+}
+
+export const saveConversation = (key: string, conversation: Conversation | null) => {
+  try {
+    if (conversation) sessionStorage.setItem(key, JSON.stringify(conversation))
+    else sessionStorage.removeItem(key)
+  } catch {
+    return
+  }
+}
+
+export const discardConversation = (key: string, id?: string) => {
+  const saved = readConversation(key)
+  if (saved && saved.id === id) saveConversation(key, null)
+}
 
 const exampleImage = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">
   <path fill="#f4ecdf" d="M0 0h240v160H0z"/>
@@ -27,20 +52,7 @@ export const exampleDrawing: ConversationDrawing = {
   drawingId: 0,
   title: '내가 서 있는 자리',
   imageUrl: `data:image/svg+xml,${encodeURIComponent(exampleImage)}`,
-}
-
-const drawingRewardKey = (drawingId: number) => `moyang:mock-drawing-reward:${drawingId}`
-
-export const earnDrawingReward = (drawingId: number) => {
-  const key = drawingRewardKey(drawingId)
-  if (sessionStorage.getItem(key) === null) sessionStorage.setItem(key, 'earned')
-}
-
-export const hasPendingDrawingReward = (drawingId: number) =>
-  sessionStorage.getItem(drawingRewardKey(drawingId)) === 'earned'
-
-export const confirmDrawingReward = (drawingId: number) => {
-  sessionStorage.setItem(drawingRewardKey(drawingId), 'confirmed')
+  concern: { id: 'relationships', label: '대인관계' },
 }
 
 const questions = [
@@ -59,8 +71,7 @@ const extraQuestions = [
 const reviewMessage =
   '오늘 그림에 담긴 여러 이야기를 나눠봤어요.\n\n이제 오늘의 그림 이야기를 함께 정리해 볼까요?'
 
-export const supportMessage =
-  '지금은 그림 이야기를 잠시 쉬어도 괜찮아요. 혼자 감당하기 어렵다면 믿을 수 있는 사람이나 자살예방상담전화 109에 도움을 요청해 보세요.\n\n모양은 전문 상담을 대신할 수 없어요.'
+export const supportMessage = '지금 마음이 많이 힘들다면, 전문 상담사의 도움을 받을 수 있어요.'
 
 export const getReplyText = (action: ConversationAction) => {
   switch (action.type) {
@@ -86,6 +97,7 @@ const waitForResponse = (delay: number, fail: boolean) =>
 export const startConversation = async (fail: boolean): Promise<Conversation> => {
   await waitForResponse(900, fail)
   return {
+    id: crypto.randomUUID(),
     messages: [{ role: 'assistant', text: questions[0] }],
     questionIndex: 0,
     status: 'asking',
@@ -106,7 +118,7 @@ export const updateConversation = async (
       ...conversation,
       messages:
         conversation.status === 'support'
-          ? [...messages, { role: 'assistant', text: supportMessage }]
+          ? [...messages, { role: 'support', text: supportMessage }]
           : messages,
       status: 'ended',
     }
@@ -115,6 +127,7 @@ export const updateConversation = async (
   if (action.type === 'CONTINUE') {
     const text = extraQuestions[(questionIndex - questions.length + 1) % extraQuestions.length]
     return {
+      ...conversation,
       messages: [...messages, { role: 'assistant', text }],
       questionIndex: questionIndex + 1,
       status: 'asking',
@@ -128,6 +141,7 @@ export const updateConversation = async (
 
   const nextQuestion = questions[questionIndex + 1]
   return {
+    ...conversation,
     messages: [...messages, reply, { role: 'assistant', text: nextQuestion ?? reviewMessage }],
     questionIndex: nextQuestion ? questionIndex + 1 : questionIndex,
     status: nextQuestion ? 'asking' : 'review',
