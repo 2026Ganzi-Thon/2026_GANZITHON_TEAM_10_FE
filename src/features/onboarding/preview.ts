@@ -1,3 +1,13 @@
+/** 개발 환경에서 지원하는 온보딩 프리뷰 쿼리인지 확인한다. */
+export const isOnboardingPreview = (search: string) => {
+  const preview = new URLSearchParams(search)
+  return (
+    import.meta.env.DEV &&
+    preview.has('preview') &&
+    (preview.get('preview') === '' || preview.get('preview') === 'onboarding')
+  )
+}
+
 /** API 명세를 기준으로 한 개발용 설문 선택지다. */
 export const previewOptions = {
   themes: [

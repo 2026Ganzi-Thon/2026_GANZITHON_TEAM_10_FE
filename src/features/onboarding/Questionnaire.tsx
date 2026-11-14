@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Dropdown, Input, TextArea } from '@/components'
 import { apiClient } from '@/lib/api-client'
-import { previewOptions } from './preview'
+import { isOnboardingPreview, previewOptions } from './preview'
 import styles from './Questionnaire.module.css'
 
 type Option = { code: string; label: string }
@@ -94,10 +94,7 @@ const Progress = ({ step }: { step: number }) => (
 export const Questionnaire = () => {
   const navigate = useNavigate()
   const preview = new URLSearchParams(window.location.search)
-  const isPreview =
-    import.meta.env.DEV &&
-    preview.has('preview') &&
-    (preview.get('preview') === '' || preview.get('preview') === 'onboarding')
+  const isPreview = isOnboardingPreview(window.location.search)
   const requestedPage = preview.get('page')
   const [initialStep] = useState(() =>
     requestedPage && /^[1-5]$/.test(requestedPage) ? Number(requestedPage) - 1 : 0,
@@ -249,7 +246,7 @@ export const Questionnaire = () => {
     }
     if (extraStory.trim() && (extraStory.trim().length < 5 || extraStory.trim().length > 100))
       return setError('추가 이야기를 5~100자로 입력해 주세요.')
-    if (isPreview) return navigate('/drawing/onboarding/1')
+    if (isPreview) return navigate('/drawing/onboarding/1?preview')
     setLoading(true)
     try {
       const response = await apiClient.put<{ success: boolean }>('/api/users/me/onboarding', {
@@ -322,7 +319,6 @@ export const Questionnaire = () => {
             <Progress step={0} />
             <div className={styles.content}>
               <div className={styles.profile}>
-                <p className={styles.hint}>모든 항목은 선택 사항이에요.</p>
                 <h2 className={styles.birthYearTitle}>나이</h2>
                 <Dropdown
                   id="birth-year"
@@ -469,6 +465,7 @@ export const Questionnaire = () => {
         <Button onClick={() => void next()} disabled={loading}>
           {loading ? '저장 중...' : step === 4 ? '저장' : '다음'}
         </Button>
+        {step === 0 && <p className={styles.hint}>모든 항목은 선택 사항이에요.</p>}
         {step > 0 && (
           <Button
             color="gray"

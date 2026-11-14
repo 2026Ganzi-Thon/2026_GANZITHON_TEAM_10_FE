@@ -1,0 +1,57 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--color-white);
+}
+
+.form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: min(315px, calc(100% - 48px));
+  margin: 8px auto 20px;
+}
+
+.preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  max-height: max(80px, calc(100dvh - 380px));
+  border-radius: 12px;
+  background: var(--color-surface-gray);
+  object-fit: cover;
+}
+
+.canvasPreview {
+  border: 1px solid #d8ded9;
+}
+
+.fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.uploadedNote {
+  margin: 0;
+  font-size: var(--font-size-caption);
+}
+
+.actions {
+  width: min(256px, 100%);
+  margin: auto auto 0;
+  padding-top: 16px;
+  text-align: center;
+}
+
+.actions p {
+  font-size: var(--font-size-caption);
+}
+
+@media (min-width: 481px) {
+  .preview {
+    max-height: max(80px, calc(var(--desktop-frame-height) - 380px));
+  }
+}

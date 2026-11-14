@@ -1,0 +1,237 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--color-white);
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 24px 0 12px;
+  background: var(--color-white);
+}
+.back {
+  display: grid;
+  width: 39px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-black);
+  place-items: center;
+  cursor: pointer;
+}
+.done {
+  width: auto;
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: var(--font-size-caption);
+}
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: min(315px, calc(100% - 48px));
+  margin: 8px auto 0;
+}
+.topic {
+  margin-bottom: 16px;
+}
+.topicLabel {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 100px;
+  background: var(--color-surface-green);
+  color: var(--color-primary);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+}
+.topic h1 {
+  margin: 10px 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.topic p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.canvas {
+  position: relative;
+  flex: none;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: max(80px, calc(100dvh - 380px));
+  border-radius: 12px;
+  background: var(--color-white);
+  box-shadow: 0 6px 20px rgb(31 62 40 / 8%);
+  overflow: hidden;
+  touch-action: none;
+}
+.canvas::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #d8ded9;
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+}
+.dock {
+  position: sticky;
+  bottom: 24px;
+  z-index: 1;
+  width: 100%;
+  margin: auto 0 24px;
+  padding-top: 20px;
+}
+.tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 0;
+  padding: 4px 18px;
+  border-radius: 16px;
+  background: #242a26;
+}
+.tool {
+  display: grid;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 68px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-white);
+  font-size: 20px;
+  place-items: center;
+  cursor: pointer;
+}
+.drawingTool {
+  position: relative;
+  overflow: visible;
+}
+.toolImage {
+  position: absolute;
+  bottom: -4px;
+  display: block;
+  width: 38px;
+  height: 62px;
+  object-fit: contain;
+  object-position: center bottom;
+  transition: transform 150ms ease;
+  transform-origin: center bottom;
+}
+.drawingTool[data-selected='true'] .toolImage {
+  transform: scale(1.12);
+}
+.compactTool {
+  font-size: 14px;
+}
+.secondaryTools {
+  display: flex;
+  flex: 0 1 152px;
+  min-width: 0;
+}
+.divider {
+  flex: none;
+  width: 1px;
+  height: 30px;
+  margin: 0 12px;
+  background: rgb(255 255 255 / 16%);
+}
+.swatch {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #eee;
+  border-radius: 50%;
+}
+.options {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% - 12px);
+  left: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  background: #242a26;
+}
+.colorPicker {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: conic-gradient(#f25d5d, #f7cf55, #65b978, #4c8cde, #a968d4, #f25d5d);
+  cursor: pointer;
+}
+.colorPicker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.colorPicker:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.thicknessIcon {
+  display: grid;
+  gap: 4px;
+  width: 16px;
+  justify-items: center;
+}
+.thicknessIcon span {
+  width: 16px;
+  background: currentColor;
+}
+.thicknessIcon span:nth-child(1) {
+  height: 2px;
+}
+.thicknessIcon span:nth-child(2) {
+  height: 4px;
+}
+.thicknessIcon span:nth-child(3) {
+  height: 6px;
+}
+.colorOption,
+.sizeOption {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  place-items: center;
+  cursor: pointer;
+}
+.colorOption[aria-pressed='true'],
+.sizeOption[aria-pressed='true'] {
+  border-color: white;
+}
+.sizeOption {
+  background: transparent;
+}
+.sizeOption span {
+  border-radius: 50%;
+  background: white;
+}
+.back:focus-visible,
+.tool:focus-visible,
+.colorOption:focus-visible,
+.sizeOption:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+@media (min-width: 481px) {
+  .canvas {
+    max-height: max(80px, calc(var(--desktop-frame-height) - 380px));
+  }
+}
