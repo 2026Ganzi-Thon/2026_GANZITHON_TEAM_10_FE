@@ -1,0 +1,25 @@
+.page {
+  position: relative;
+  height: 100%;
+  min-height: 650px;
+  background: var(--color-white);
+}
+
+.illustration {
+  position: absolute;
+  top: 24.8%;
+  left: 50%;
+  width: min(280px, calc(100% - 48px));
+  height: auto;
+  transform: translateX(-50%);
+}
+
+.actions {
+  position: absolute;
+  bottom: 5.1%;
+  left: 50%;
+  display: grid;
+  gap: 9px;
+  width: min(256px, calc(100% - 48px));
+  transform: translateX(-50%);
+}

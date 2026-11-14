@@ -29,6 +29,8 @@ import styles from './DrawingConversation.module.css'
 
 type DrawingConversationProps = {
   drawing: ConversationDrawing
+  activityId?: number
+  resultState?: object
   storageKey: string
   storageScope: string
   programActivity?: ProgramActivityHandoff
@@ -54,6 +56,8 @@ const isDialogBackdrop = ({ target, clientX, clientY }: MouseEvent<HTMLDivElemen
 
 export const DrawingConversation = ({
   drawing,
+  activityId,
+  resultState,
   storageKey,
   storageScope,
   programActivity,
@@ -193,11 +197,13 @@ export const DrawingConversation = ({
         replace
         to={previewWallet ? '/drawing/result?mock=wool-session' : '/drawing/result'}
         state={{
+          ...resultState,
           drawing,
           conversation,
           programActivity,
           storageScope,
           conversationStorageKey: storageKey,
+          activityId,
         }}
       />
     )

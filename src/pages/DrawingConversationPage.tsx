@@ -11,6 +11,7 @@ export const DrawingConversationPage = () => {
   const storageScope = useMockStorageScope()
   const state = location.state as {
     drawing?: ConversationDrawing
+    activityId?: number
     programActivity?: ProgramActivityHandoff
     storageScope?: string
   } | null
@@ -33,6 +34,8 @@ export const DrawingConversationPage = () => {
     <DrawingConversation
       key={storageKey}
       drawing={drawing}
+      activityId={state?.activityId}
+      resultState={state ?? undefined}
       storageKey={storageKey}
       storageScope={storageScope}
       programActivity={activity}

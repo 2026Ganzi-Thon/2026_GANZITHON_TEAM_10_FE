@@ -17,6 +17,7 @@ import { canCompleteProgramActivity, readPrograms } from '@/features/personal-pr
 export type DrawingResultSource = {
   drawing: ConversationDrawing
   conversation: Conversation
+  activityId?: number
   programActivity?: ProgramActivityHandoff
   conversationStorageKey?: string
 }
