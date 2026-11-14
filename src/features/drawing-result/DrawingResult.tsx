@@ -230,7 +230,11 @@ export const DrawingResult = ({
         else savedReflection.current = saved.record
         if (programActivity) {
           const canApplyProgress = saved.status === 'saved' || saved.record || preview
-          if (!canApplyProgress || !completeProgramActivity(programActivity, programScenario)) {
+          const progressApplied =
+            canApplyProgress &&
+            (await completeProgramActivity(programActivity, programScenario, signal))
+          if (signal.aborted || storageScope !== getMockStorageScope()) return
+          if (!progressApplied) {
             setActivityUnavailable(true)
             return
           }

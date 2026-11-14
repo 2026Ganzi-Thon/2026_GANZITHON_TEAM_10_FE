@@ -1,5 +1,8 @@
 const legacyOwnerKey = 'moyang:mock-storage-legacy-owner'
-const legacyReaders = new Map<string, (saved: string | null) => string | undefined>()
+const legacyReaders = new Map<
+  string,
+  (local: string | null, session: string | null) => string | undefined
+>()
 const legacyMigrations = new Map<string, (accountSuffix: string) => void>()
 const migratingKeys = new Set<string>()
 export const mockStorageLock = 'moyang:mock-storage'
@@ -72,10 +75,18 @@ const backupSession = (sourceKey: string, prefix: string, keepLatest = false) =>
 
 const backupOwnedSession = (key: string) => {
   const owner = localStorage.getItem(legacyOwnerKey)
-  if (!isAccountScope(owner)) return
-  const scopedKey = keyWithAccount(key, owner.slice('moyang'.length))
-  backupSession(key, ownedSessionPrefix(key, owner), true)
-  backupSession(scopedKey, ownedSessionPrefix(scopedKey, owner), true)
+  if (isAccountScope(owner)) backupSession(key, ownedSessionPrefix(key, owner), true)
+  try {
+    const prefix = `${key}:user:`
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const sourceKey = sessionStorage.key(index)
+      if (!sourceKey?.startsWith(prefix) || sourceKey.length === prefix.length) continue
+      const scope = `moyang${sourceKey.slice(key.length)}`
+      backupSession(sourceKey, ownedSessionPrefix(sourceKey, scope), true)
+    }
+  } catch {
+    // 접근할 수 없는 세션 원본은 그대로 보관한다.
+  }
 }
 
 const backupUnownedSession = (key: string) => {
@@ -87,6 +98,22 @@ const backupUnownedSession = (key: string) => {
 }
 
 export const getMockStorageKey = (key: string) => keyWithAccount(key, getAccountSuffix())
+
+export const withMockStorageLock = async <T>(
+  key: string,
+  update: () => T,
+  signal?: AbortSignal,
+): Promise<T> => {
+  signal?.throwIfAborted()
+  const accountKey = getMockStorageKey(key)
+  const applyUpdate = () => {
+    signal?.throwIfAborted()
+    if (accountKey !== getMockStorageKey(key)) throw new Error('로그인 정보가 변경됐어요')
+    return update()
+  }
+  if (!navigator.locks) return applyUpdate()
+  return navigator.locks.request(mockStorageLock, { signal }, applyUpdate)
+}
 
 export const getMockStorageScope = () => {
   try {
@@ -102,45 +129,32 @@ export const writeMockStorage = (key: string, data: unknown) => {
 }
 
 export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T | null => {
+  const accountSuffix = getAccountSuffix() || ':guest'
+  const readLegacy = key.endsWith(accountSuffix)
+    ? legacyReaders.get(key.slice(0, -accountSuffix.length))
+    : undefined
   const local = localStorage.getItem(key)
-  let stored = local
+  let session: string | null = null
   let sessionUnavailable = false
-  if (stored === null) {
+  if (local === null || readLegacy) {
     try {
-      stored = readSessionStorage(key)
+      session = readSessionStorage(key)
     } catch {
       sessionUnavailable = true
     }
   }
-  const accountSuffix = getAccountSuffix()
-  const readLegacy =
-    accountSuffix && key.endsWith(accountSuffix)
-      ? legacyReaders.get(key.slice(0, -accountSuffix.length))
-      : undefined
-  const legacy = readLegacy?.(stored)
-  const saved = legacy ?? stored
+  const saved = readLegacy?.(local, session) ?? local ?? session
   if (saved === null && sessionUnavailable) throw new MockStorageUnavailableError()
   if (saved === null) return null
 
-  const data = parse(saved)
-  if (local === null && legacy === undefined) {
-    try {
-      writeMockStorage(key, data)
-      sessionStorage.removeItem(key)
-    } catch {
-      // 브라우저에 쓸 수 없으면 기존 세션 데이터를 계속 사용한다.
-    }
-  }
-  return data
+  return parse(saved)
 }
 
-export const migrateLegacyMockStorage = async (migrate: (accountSuffix: string) => void) => {
+const migrateRegisteredStorage = async (includeGuest = false) => {
   try {
-    migrate('')
     const scope = getMockStorageScope()
     const migrateForAccount = () => {
-      if (getMockStorageScope() !== scope) return
-      if (scope && scope !== 'moyang') {
+      if (scope && getMockStorageScope() === scope && (scope !== 'moyang' || includeGuest)) {
         const accountSuffix = scope.slice('moyang'.length)
         for (const migrateKey of legacyMigrations.values()) migrateKey(accountSuffix)
       }
@@ -149,6 +163,15 @@ export const migrateLegacyMockStorage = async (migrate: (accountSuffix: string) 
     }
     if (navigator.locks) await navigator.locks.request(mockStorageLock, migrateForAccount)
     else migrateForAccount()
+  } catch {
+    // 저장소를 읽지 못해도 앱은 시작한다.
+  }
+}
+
+export const migrateLegacyMockStorage = async (migrate: (accountSuffix: string) => void) => {
+  try {
+    migrate('')
+    await migrateRegisteredStorage()
   } catch {
     // 저장소를 읽지 못해도 앱은 시작한다.
   }
@@ -163,6 +186,7 @@ export const migrateLegacyMockKey = <T>(
   const readSources = (suffix: string, requireReadable = false) => {
     const sources: { storage: Storage; key: string; saved: string; data: T }[] = []
     let unavailable = false
+    let unreadableBackup = false
     const readBackups = (sourceKey: string) => {
       const prefix = ownedSessionPrefix(sourceKey, `moyang${suffix}`)
       const backupKeys: string[] = []
@@ -177,7 +201,7 @@ export const migrateLegacyMockKey = <T>(
             sources.push({ storage: localStorage, key: backupKey, saved, data: parse(saved) })
           }
         } catch {
-          unavailable = true
+          unreadableBackup = true
         }
       }
     }
@@ -194,6 +218,7 @@ export const migrateLegacyMockKey = <T>(
       }
     }
     readBackups(key)
+    if (unreadableBackup) throw new MockStorageUnavailableError()
     if (requireReadable && unavailable && !sources.length) throw new MockStorageUnavailableError()
     return sources
   }
@@ -206,19 +231,29 @@ export const migrateLegacyMockKey = <T>(
 
   const migrateForAccount = (suffix: string) => {
     try {
-      if (!suffix || getAccountSuffix() !== suffix) return
-      const sources = readSources(suffix)
+      if (getAccountSuffix() !== suffix) return
+      const sources = suffix ? readSources(suffix) : []
       const scopedKey = keyWithAccount(key, suffix)
       const local = localStorage.getItem(scopedKey)
-      const current = local ?? readSessionStorage(scopedKey)
-      if (!sources.length && (local !== null || current === null)) return
-      const migrated = mergeSources(current, sources)
+      let session: string | null = null
+      try {
+        session = readSessionStorage(scopedKey)
+      } catch (error) {
+        if (local === null) throw error
+      }
+      if (session !== null) {
+        sources.unshift({
+          storage: sessionStorage,
+          key: scopedKey,
+          saved: session,
+          data: parse(session),
+        })
+      }
+      if (!sources.length) return
+      const migrated = mergeSources(local, sources)
       writeMockStorage(scopedKey, migrated)
       for (const { storage, key: sourceKey, saved } of sources) {
         if (storage.getItem(sourceKey) === saved) storage.removeItem(sourceKey)
-      }
-      if (local === null && current !== null && readSessionStorage(scopedKey) === current) {
-        sessionStorage.removeItem(scopedKey)
       }
     } catch {
       // 이전에 실패하면 원본을 다음 실행까지 보관한다.
@@ -226,21 +261,24 @@ export const migrateLegacyMockKey = <T>(
   }
 
   legacyMigrations.set(key, migrateForAccount)
-  legacyReaders.set(key, (saved) => {
+  legacyReaders.set(key, (local, session) => {
     const suffix = getAccountSuffix()
-    if (!suffix) return
-    const sources = readSources(suffix, saved === null)
-    if (!sources.length) return
-    const merged = JSON.stringify(mergeSources(saved, sources))
+    const sources = suffix ? readSources(suffix, local === null && session === null) : []
+    if (!sources.length && session === null) return
+    const current =
+      local === null
+        ? session
+        : session === null
+          ? local
+          : JSON.stringify(merge(parse(local), parse(session)))
+    const merged = JSON.stringify(mergeSources(current, sources))
     const scopedKey = keyWithAccount(key, suffix)
     if (!migratingKeys.has(scopedKey)) {
       migratingKeys.add(scopedKey)
-      void migrateLegacyMockStorage(migrateForAccount).finally(() =>
-        migratingKeys.delete(scopedKey),
-      )
+      void migrateRegisteredStorage(true).finally(() => migratingKeys.delete(scopedKey))
     }
     return merged
   })
 
-  migrateForAccount(accountSuffix)
+  if (accountSuffix) migrateForAccount(accountSuffix)
 }

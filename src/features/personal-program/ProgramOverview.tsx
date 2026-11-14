@@ -1,4 +1,4 @@
-import { useId, useReducer, useState } from 'react'
+import { useEffect, useId, useReducer, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarDays, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
@@ -145,6 +145,12 @@ export const PersonalProgramHomeSection = ({
   const [, retryStorage] = useReducer((attempt: number) => attempt + 1, 0)
   const [today] = useProgramToday()
   const sectionId = useId()
+  useEffect(() => {
+    if (programs !== undefined) return
+    window.addEventListener('storage', retryStorage)
+    return () => window.removeEventListener('storage', retryStorage)
+  }, [programs])
+
   let storedPrograms = programs ?? []
   let storageUnavailable = false
   if (programs === undefined) {
