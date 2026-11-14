@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faCircleInfo } from '@fortawesome/free-solid-svg-icons'
@@ -28,7 +28,7 @@ import {
   getToday,
   rounds,
 } from './programSchedule'
-import type { FirstReflection } from './programSchedule'
+import type { FirstReflection, PersonalProgram } from './programSchedule'
 import { useProgramToday } from './useProgramToday'
 import styles from './PersonalProgram.module.css'
 
@@ -57,7 +57,14 @@ export const PersonalProgramPage = () => {
     )
   const scenario = mockScenario ?? (isPreview ? 'setup' : undefined)
   const reflection = state?.firstReflection ?? (isPreview ? exampleReflection : undefined)
-  const programs = readPrograms(scenario)
+  const [, retryStorage] = useReducer((attempt: number) => attempt + 1, 0)
+  let programs: PersonalProgram[] = []
+  let storageUnavailable = false
+  try {
+    programs = readPrograms(scenario)
+  } catch {
+    storageUnavailable = true
+  }
   const program = id
     ? programs.find((item) => item.id === id)
     : reflection && getProgramForReflection(programs, reflection)
@@ -133,6 +140,23 @@ export const PersonalProgramPage = () => {
     } catch {
       setCancelFailed(true)
     }
+  }
+
+  if (storageUnavailable) {
+    return (
+      <div className={styles.page}>
+        <section className={styles.content}>
+          <h1 className={styles.headline}>일정을 확인하지 못했어요</h1>
+          <p className={styles.error} role="alert">
+            저장된 일정을 불러오지 못했어요. 브라우저 설정을 확인한 뒤 다시 시도해 주세요.
+          </p>
+          <Button onClick={retryStorage}>다시 시도</Button>
+          <Link className={styles.textLink} to={home}>
+            홈으로 돌아가기
+          </Link>
+        </section>
+      </div>
+    )
   }
 
   if (isHomePreview) {
