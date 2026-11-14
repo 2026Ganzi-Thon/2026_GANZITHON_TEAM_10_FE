@@ -117,7 +117,11 @@ export const readPrograms = (scenario?: Scenario): PersonalProgram[] => {
 const storePrograms = (programs: PersonalProgram[], scenario?: Scenario) => {
   const key = keyFor(scenario)
   writeMockStorage(key, programs)
-  sessionStorage.removeItem(key)
+  try {
+    sessionStorage.removeItem(key)
+  } catch {
+    return
+  }
 }
 
 export const saveProgramSchedule = async ({

@@ -26,6 +26,7 @@ const plain = (value) => JSON.parse(JSON.stringify(value))
 function environment(local = new Map(), session = new Map(), sharedLocks) {
   let failWrites = false
   let denySessionReads = false
+  let denySessionAccess = false
   let storageLimit = Infinity
   let now = Date.parse(`${today}T12:00:00+09:00`)
   let queue = Promise.resolve()
@@ -71,9 +72,9 @@ function environment(local = new Map(), session = new Map(), sharedLocks) {
       return now
     }
   }
+  const sessionStore = storage(session)
   const context = vm.createContext({
     localStorage: storage(local),
-    sessionStorage: storage(session),
     navigator,
     window: { navigator, setTimeout: (callback) => setTimeout(callback, 0), clearTimeout },
     atob,
@@ -82,6 +83,12 @@ function environment(local = new Map(), session = new Map(), sharedLocks) {
     AbortController,
     Date: Clock,
     crypto: require('node:crypto').webcrypto,
+  })
+  Object.defineProperty(context, 'sessionStorage', {
+    get() {
+      if (denySessionAccess) throw new Error('session access denied')
+      return sessionStore
+    },
   })
   const modules = new Map()
   function load(file) {
@@ -117,6 +124,7 @@ function environment(local = new Map(), session = new Map(), sharedLocks) {
     fail: (value) => (failWrites = value),
     limit: (value) => (storageLimit = value),
     denySessionReads: (value) => (denySessionReads = value),
+    denySessionAccess: (value) => (denySessionAccess = value),
     time: (value) => (now = Date.parse(value)),
     navigator,
     locks: navigator.locks,
@@ -676,3 +684,130 @@ test('로그인 후 회고를 먼저 읽어도 다른 영역의 계정 일정까
   await reopened.boot()
   assert.deepEqual(plain(reopened.programs.readPrograms()), [program])
 })
+
+for (const block of ['denySessionReads', 'denySessionAccess']) {
+  test(`${block}: 비로그인 실행 후 로그인해도 로컬 원본의 회고·일정·당일 제한을 읽는다`, async () => {
+    const e = environment()
+    e.local.set(recordsKey, JSON.stringify(reflection))
+    e.local.set(programsKey, JSON.stringify([program]))
+    e.local.set(ownerKey, 'moyang:user:a')
+    e[block](true)
+    await e.boot()
+    assert.deepEqual(plain(e.reflections.readReflections().records), [])
+    e.account('a')
+    assert.deepEqual(plain(e.reflections.readReflections().records), [record])
+    assert.deepEqual(plain(e.programs.readPrograms()), [program])
+    const result = e.load('src/features/drawing-result/resultMock.ts')
+    assert.equal(result.getReflectionSaveStatus(e.reflections.readReflections(), 99), 'daily-limit')
+    assert.equal(e.reflections.getWoolBalance(), 1)
+    await e.settled()
+    const reloaded = environment(e.local, new Map())
+    reloaded[block](true)
+    await reloaded.boot()
+    assert.deepEqual(plain(reloaded.reflections.readReflections().records), [record])
+    assert.deepEqual(plain(reloaded.programs.readPrograms()), [program])
+    reloaded.account('b')
+    assert.deepEqual(plain(reloaded.reflections.readReflections().records), [])
+    assert.deepEqual(plain(reloaded.programs.readPrograms()), [])
+    assert.equal(reloaded.local.has(`${recordsKey}:guest`), false)
+  })
+
+  test(`${block}: 로그인한 채 실행해도 로컬 원본과 기존 계정 자료를 합쳐 보존한다`, async () => {
+    const e = environment()
+    e.account('a')
+    e.local.set(ownerKey, 'moyang:user:a')
+    e.local.set(recordsKey, JSON.stringify(reflection))
+    e.local.set(programsKey, JSON.stringify([program]))
+    e.local.set(
+      `${recordsKey}:user:a`,
+      JSON.stringify({
+        records: [{ ...record, drawingId: 42, recordDate: '2026-11-13' }],
+        completedDrawingIds: [42],
+        paidQuestions: ['paid'],
+      }),
+    )
+    const updated = { ...program, days: [2, 5], nextDate: '2026-11-17' }
+    e.local.set(`${programsKey}:user:a`, JSON.stringify([updated]))
+    e[block](true)
+    await e.boot()
+    assert.equal(e.reflections.readReflections().records.length, 2)
+    assert.equal(e.reflections.getWoolBalance(), 1)
+    assert.deepEqual(plain(e.programs.readPrograms()), [updated])
+    assert.equal(e.local.has(recordsKey), false)
+    assert.equal(e.local.has(programsKey), false)
+  })
+
+  test(`${block}: 접근할 수 없는 세션 원본은 지우지 않고 접근 복구 후 이전한다`, async () => {
+    const e = environment()
+    e.local.set(ownerKey, 'moyang:user:a')
+    e.session.set(recordsKey, JSON.stringify(reflection))
+    e.session.set(programsKey, JSON.stringify([program]))
+    e[block](true)
+    await e.boot()
+    e.account('a')
+    assert.deepEqual(plain(e.reflections.readReflections().records), [])
+    assert.deepEqual(plain(e.programs.readPrograms()), [])
+    assert.equal(e.session.get(recordsKey), JSON.stringify(reflection))
+    assert.equal(e.session.get(programsKey), JSON.stringify([program]))
+    assert.equal(e.local.has(`${recordsKey}:user:a`), false)
+    assert.equal(e.local.has(`${programsKey}:user:a`), false)
+    e[block](false)
+    assert.equal(e.reflections.getWoolBalance(), 1)
+    assert.deepEqual(plain(e.programs.readPrograms()), [program])
+    await e.settled()
+    assert.equal(e.session.has(recordsKey), false)
+    assert.equal(e.session.has(programsKey), false)
+  })
+
+  test(`${block}: 소유자 불명 로컬 자료는 차단 환경에서도 새 계정에 붙이지 않는다`, async () => {
+    const e = environment()
+    e.local.set(recordsKey, JSON.stringify(reflection))
+    e.local.set(programsKey, JSON.stringify([program]))
+    e[block](true)
+    await e.boot()
+    e.account('a')
+    assert.equal(e.reflections.getWoolBalance(), 0)
+    assert.deepEqual(plain(e.programs.readPrograms()), [])
+    assert.equal(e.local.get(recordsKey), JSON.stringify(reflection))
+    assert.equal(e.local.get(programsKey), JSON.stringify([program]))
+    assert.equal(e.local.has(ownerKey), false)
+  })
+
+  test(`${block}: 복원한 회고의 중복 저장·차감과 일정 변경·취소를 이어서 처리한다`, async () => {
+    const e = environment()
+    e.local.set(recordsKey, JSON.stringify(reflection))
+    e.local.set(programsKey, JSON.stringify([program]))
+    e.local.set(ownerKey, 'moyang:user:a')
+    e[block](true)
+    await e.boot()
+    e.account('a')
+    const result = e.load('src/features/drawing-result/resultMock.ts')
+    const options = () => ({
+      preview: null,
+      previewWallet: false,
+      fail: false,
+      signal: new AbortController().signal,
+    })
+    const existing = {
+      drawing: { drawingId: 41, title: '기존 회고' },
+      card: { todaysStory: '이야기' },
+    }
+    assert.equal((await result.saveDrawingResult(existing, options())).status, 'already-saved')
+    const another = { ...existing, drawing: { drawingId: 99, title: '새 회고' } }
+    assert.equal((await result.saveDrawingResult(another, options())).status, 'daily-limit')
+    await e.reflections.spendWoolForQuestion('paid-after-login', new AbortController().signal)
+    assert.equal(e.reflections.getWoolBalance(), 0)
+    await e.programs.saveProgramSchedule({
+      reflection: program.firstReflection,
+      programId: program.id,
+      days: [2, 5],
+      fail: false,
+      signal: new AbortController().signal,
+    })
+    assert.deepEqual(plain(e.programs.readPrograms()[0].days), [2, 5])
+    e.programs.cancelProgramSchedule(program.id)
+    assert.equal(e.programs.readPrograms()[0].cancelled, true)
+    await e.settled()
+    assert.equal(e.programs.readPrograms()[0].cancelled, true)
+  })
+}

@@ -23,6 +23,14 @@ const getAccountSuffix = () => {
 
 const keyWithAccount = (key: string, suffix: string) => `${key}${suffix || ':guest'}`
 
+const readSessionStorage = (key: string) => {
+  try {
+    return sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
 const backupUnownedSession = (key: string) => {
   try {
     const owner = localStorage.getItem(legacyOwnerKey)
@@ -63,7 +71,7 @@ export const writeMockStorage = (key: string, data: unknown) => {
 
 export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T | null => {
   const local = localStorage.getItem(key)
-  const stored = local ?? sessionStorage.getItem(key)
+  const stored = local ?? readSessionStorage(key)
   const accountSuffix = getAccountSuffix()
   const readLegacy =
     accountSuffix && key.endsWith(accountSuffix)
@@ -111,8 +119,9 @@ export const migrateLegacyMockKey = <T>(
   merge: (current: T, legacy: T) => T,
 ) => {
   const readSources = () =>
-    [localStorage, sessionStorage].flatMap((storage) => {
+    [() => localStorage, () => sessionStorage].flatMap((getStorage) => {
       try {
+        const storage = getStorage()
         const saved = storage.getItem(key)
         if (saved === null) return []
         return [{ storage, saved, data: parse(saved) }]
@@ -142,7 +151,7 @@ export const migrateLegacyMockKey = <T>(
 
       const scopedKey = keyWithAccount(key, suffix)
       const migrated = mergeSources(
-        localStorage.getItem(scopedKey) ?? sessionStorage.getItem(scopedKey),
+        localStorage.getItem(scopedKey) ?? readSessionStorage(scopedKey),
         sources,
       )
       writeMockStorage(scopedKey, migrated)
