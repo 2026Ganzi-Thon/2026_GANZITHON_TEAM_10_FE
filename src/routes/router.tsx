@@ -22,6 +22,7 @@ import { DrawingResultPage } from '@/pages/DrawingResultPage'
 import { SessionsPage } from '@/pages/SessionsPage'
 import { MeetingsPage } from '@/pages/MeetingsPage'
 import { MeetingDetailPage } from '@/pages/MeetingDetailPage'
+import { MeetingWaitingPage } from '@/pages/MeetingWaitingPage'
 import { MeetingChatPage } from '@/pages/MeetingChatPage'
 import { RecordsPage } from '@/pages/RecordsPage'
 import { RecordDetailPage } from '@/pages/RecordDetailPage'
@@ -96,6 +97,7 @@ export const router = createBrowserRouter([
       { path: '/sessions', element: <SessionsPage /> },
       { path: '/meetings', element: <MeetingsPage /> },
       { path: '/meetings/:meetingId', element: <MeetingDetailPage /> },
+      { path: '/meetings/:meetingId/waiting', element: <MeetingWaitingPage /> },
       { path: '/meetings/:meetingId/chat', element: <MeetingChatPage /> },
       { path: '/records', element: <RecordsPage /> },
       { path: '/records/:recordId', element: <RecordDetailPage /> },
