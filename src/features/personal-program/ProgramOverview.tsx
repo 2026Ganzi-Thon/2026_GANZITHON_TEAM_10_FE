@@ -1,7 +1,8 @@
-import { useId, useState } from 'react'
+import { useId, useReducer, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarDays, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
+import { Button } from '@/components'
 import { readPrograms } from './programMock'
 import { formatActivityDate, formatWeekdays, getActivitySchedule, rounds } from './programSchedule'
 import type { FirstReflection, PersonalProgram, ProgramActivity } from './programSchedule'
@@ -134,16 +135,41 @@ export const PersonalProgramHomeCard = ({
 }
 
 export const PersonalProgramHomeSection = ({
-  programs = readPrograms(),
+  programs,
   getProgramLink,
 }: {
   programs?: PersonalProgram[]
   getProgramLink?: (programId: string) => string
 } = {}) => {
   const [expanded, setExpanded] = useState(false)
+  const [, retryStorage] = useReducer((attempt: number) => attempt + 1, 0)
   const [today] = useProgramToday()
   const sectionId = useId()
-  const activePrograms = programs.filter(
+  let storedPrograms = programs ?? []
+  let storageUnavailable = false
+  if (programs === undefined) {
+    try {
+      storedPrograms = readPrograms()
+    } catch {
+      storageUnavailable = true
+    }
+  }
+
+  if (storageUnavailable) {
+    return (
+      <section className={styles.homeSection} aria-labelledby={sectionId}>
+        <h2 id={sectionId}>나의 모양 이어가기</h2>
+        <p className={styles.homeSummary} role="alert">
+          저장된 일정을 불러오지 못했어요. 브라우저 설정을 확인한 뒤 다시 시도해 주세요.
+        </p>
+        <Button color="gray" onClick={retryStorage}>
+          다시 시도
+        </Button>
+      </section>
+    )
+  }
+
+  const activePrograms = storedPrograms.filter(
     (program) => !program.cancelled && program.completed < rounds.length,
   )
   const canCollapse = activePrograms.length >= 3

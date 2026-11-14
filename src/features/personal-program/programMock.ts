@@ -1,6 +1,7 @@
 import {
   getMockStorageKey,
   migrateLegacyMockKey,
+  MockStorageUnavailableError,
   readMockStorage,
   writeMockStorage,
 } from '@/lib/mock-storage'
@@ -106,10 +107,14 @@ export const migrateLegacyPrograms = (accountSuffix: string) => {
   }
 }
 
+const loadPrograms = (scenario?: Scenario): PersonalProgram[] =>
+  readMockStorage(keyFor(scenario), parsePrograms) ?? examplePrograms(scenario)
+
 export const readPrograms = (scenario?: Scenario): PersonalProgram[] => {
   try {
-    return readMockStorage(keyFor(scenario), parsePrograms) ?? examplePrograms(scenario)
-  } catch {
+    return loadPrograms(scenario)
+  } catch (error) {
+    if (error instanceof MockStorageUnavailableError) throw error
     return examplePrograms(scenario)
   }
 }
@@ -145,7 +150,7 @@ export const saveProgramSchedule = async ({
   if (accountKey !== keyFor(scenario)) throw new Error('로그인 정보가 변경됐어요')
   if (fail) throw new Error('일정 저장 실패')
 
-  const programs = readPrograms(scenario)
+  const programs = loadPrograms(scenario)
   const program = programId
     ? programs.find(({ id }) => id === programId)
     : getProgramForReflection(programs, reflection)
@@ -174,7 +179,7 @@ export const saveProgramSchedule = async ({
 
 export const cancelProgramSchedule = (id: string, scenario?: Scenario) => {
   storePrograms(
-    readPrograms(scenario).map((program) =>
+    loadPrograms(scenario).map((program) =>
       program.id === id && program.completed < rounds.length
         ? { ...program, cancelled: true, nextDate: null }
         : program,
@@ -193,7 +198,7 @@ export const canCompleteProgramActivity = (activity: ProgramActivity, scenario?:
   )
 
 export const completeProgramActivity = (activity: ProgramActivity, scenario?: Scenario) => {
-  const programs = readPrograms(scenario)
+  const programs = loadPrograms(scenario)
   const program = programs.find(({ id }) => id === activity.programId)
   const today = getToday()
   if (!program) return false
