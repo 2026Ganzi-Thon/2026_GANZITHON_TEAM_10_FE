@@ -1,8 +1,4 @@
-/**
- * 그림 촬영 및 업로드 화면을 담당한다.
- *
- * @returns 페이지 요소 또는 화면 구현 전 null
- */
-export const DrawingUploadPage = () => {
-  return null
-}
+import { DrawingUpload } from '@/features/drawing-upload'
+
+/** 그림 촬영 및 업로드 화면을 표시한다. */
+export const DrawingUploadPage = () => <DrawingUpload />
