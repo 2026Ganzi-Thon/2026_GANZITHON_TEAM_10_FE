@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..')
 const recordsKey = 'moyang:mock-reflection-records'
 const programsKey = 'moyang:personal-programs'
 const ownerKey = 'moyang:mock-storage-legacy-owner'
+const backupPrefix = 'moyang:mock-storage-backup:session:'
 const today = '2026-11-14'
 const record = { drawingId: 41, recordDate: today, sheepReward: 1, title: '이전 회고' }
 const reflection = { records: [record], completedDrawingIds: [41] }
@@ -25,15 +26,26 @@ const plain = (value) => JSON.parse(JSON.stringify(value))
 function environment(local = new Map(), session = new Map(), sharedLocks) {
   let failWrites = false
   let denySessionReads = false
+  let storageLimit = Infinity
   let now = Date.parse(`${today}T12:00:00+09:00`)
   let queue = Promise.resolve()
   const storage = (values) => ({
+    get length() {
+      return values.size
+    },
+    key: (index) => [...values.keys()][index] ?? null,
     getItem(key) {
       if (denySessionReads && values === session) throw new Error('session unavailable')
       return values.get(key) ?? null
     },
     setItem(key, value) {
       if (failWrites) throw new Error('quota')
+      if (values === local) {
+        const size = [...values]
+          .filter(([existingKey]) => existingKey !== key)
+          .reduce((total, [key, value]) => total + key.length + value.length, 0)
+        if (size + key.length + String(value).length > storageLimit) throw new Error('quota')
+      }
       values.set(key, String(value))
     },
     removeItem: (key) => values.delete(key),
@@ -103,6 +115,7 @@ function environment(local = new Map(), session = new Map(), sharedLocks) {
     programs,
     load: (file) => load(path.join(root, file)),
     fail: (value) => (failWrites = value),
+    limit: (value) => (storageLimit = value),
     denySessionReads: (value) => (denySessionReads = value),
     time: (value) => (now = Date.parse(value)),
     navigator,
@@ -134,7 +147,10 @@ test('로그인 전에 기존 자료를 guest로 옮기거나 소유자를 지�
   await e.boot()
   assert.equal(e.reflections.getWoolBalance(), 0)
   assert.deepEqual(plain(e.programs.readPrograms()), [])
-  assert.deepEqual([...e.local, ...e.session], before)
+  assert.deepEqual(
+    [...e.local, ...e.session].filter(([key]) => !key.startsWith(backupPrefix)),
+    before,
+  )
   for (const id of ['a', 'b']) {
     e.account(id)
     assert.deepEqual(plain(e.reflections.readReflections().records), [])
@@ -486,4 +502,177 @@ test('세션 저장소 접근이 막혀도 읽을 수 있는 회고는 유지하
   assert.deepEqual(plain(e.programs.readPrograms()), [program])
   await e.settled()
   assert.equal(e.local.has(`${programsKey}:user:a`), true)
+})
+
+test('소유자 불명 세션 일정은 비로그인 실행 후 탭을 닫아도 백업이 남는다', async () => {
+  const e = environment()
+  const saved = JSON.stringify([program])
+  e.session.set(programsKey, saved)
+  await e.boot()
+  const reopened = environment(e.local, new Map())
+  await reopened.boot()
+  reopened.account('a')
+  assert.deepEqual(plain(reopened.programs.readPrograms()), [])
+  const backup = [...reopened.local].find(
+    ([key, value]) => key.startsWith(backupPrefix) && value === saved,
+  )
+  assert.ok(backup)
+  assert.equal(reopened.local.has(`${programsKey}:user:a`), false)
+  assert.equal(reopened.local.has(`${programsKey}:guest`), false)
+  assert.equal(reopened.local.has(ownerKey), false)
+})
+
+test('이미 guest에 옮겨진 세션 원본도 탭을 닫기 전에 별도로 보관한다', async () => {
+  for (const owner of [null, 'moyang', 'moyang:user:a']) {
+    const e = environment()
+    const saved = JSON.stringify(reflection)
+    if (owner) e.local.set(ownerKey, owner)
+    e.session.set(`${recordsKey}:guest`, saved)
+    await e.boot()
+    const reopened = environment(e.local, new Map())
+    await reopened.boot()
+    reopened.account('a')
+    assert.deepEqual(plain(reopened.reflections.readReflections().records), [])
+    assert.ok(
+      [...reopened.local].some(([key, value]) => key.startsWith(backupPrefix) && value === saved),
+    )
+    assert.equal(reopened.local.has(`${recordsKey}:user:a`), false)
+  }
+})
+
+test('같은 세션 원본은 중복 백업하지 않고 바뀐 내용은 별도 보관한다', async () => {
+  const e = environment()
+  const original = JSON.stringify([program])
+  e.session.set(programsKey, original)
+  await e.boot()
+  await e.boot()
+  assert.equal([...e.local.keys()].filter((key) => key.startsWith(backupPrefix)).length, 1)
+  const changed = JSON.stringify([{ ...program, days: [2, 5], nextDate: '2026-11-17' }])
+  e.session.set(programsKey, changed)
+  await e.boot()
+  const backups = [...e.local].filter(([key]) => key.startsWith(backupPrefix))
+  assert.equal(backups.length, 2)
+  assert.ok(backups.some(([, value]) => value === original))
+  assert.ok(backups.some(([, value]) => value === changed))
+  assert.equal(e.session.get(programsKey), changed)
+})
+
+test('여러 탭의 서로 다른 세션 원본을 덮어쓰거나 합치지 않는다', async () => {
+  const first = environment()
+  const second = environment(first.local, new Map(), first.locks)
+  const firstSaved = JSON.stringify([program])
+  const secondSaved = JSON.stringify([{ ...program, id: 'another-session-program' }])
+  first.session.set(programsKey, firstSaved)
+  second.session.set(programsKey, secondSaved)
+  await Promise.all([first.boot(), second.boot()])
+  const backups = [...first.local].filter(([key]) => key.startsWith(backupPrefix))
+  assert.equal(backups.length, 2)
+  assert.ok(backups.some(([, value]) => value === firstSaved))
+  assert.ok(backups.some(([, value]) => value === secondSaved))
+})
+
+test('백업이 저장 공간 부족으로 실패하면 원본을 남기고 다음 실행에서 다시 보관한다', async () => {
+  const e = environment()
+  const saved = JSON.stringify([program])
+  e.session.set(programsKey, saved)
+  e.fail(true)
+  await e.boot()
+  assert.equal(e.session.get(programsKey), saved)
+  assert.equal(
+    [...e.local.keys()].some((key) => key.startsWith(backupPrefix)),
+    false,
+  )
+  e.fail(false)
+  await e.boot()
+  assert.ok([...e.local].some(([key, value]) => key.startsWith(backupPrefix) && value === saved))
+  assert.equal(e.session.get(programsKey), saved)
+})
+
+test('백업할 때 기존 로컬 자료와 손상된 세션 원본도 그대로 유지한다', async () => {
+  const e = environment()
+  const localSaved = JSON.stringify([program])
+  e.local.set(programsKey, localSaved)
+  e.session.set(programsKey, 'damaged-session-json')
+  await e.boot()
+  assert.equal(e.local.get(programsKey), localSaved)
+  assert.equal(e.session.get(programsKey), 'damaged-session-json')
+  assert.ok(
+    [...e.local].some(
+      ([key, value]) => key.startsWith(backupPrefix) && value === 'damaged-session-json',
+    ),
+  )
+})
+
+test('일반 회고와 미리보기 일정도 각각 원본 형식으로 백업한다', async () => {
+  const e = environment()
+  e.session.set(recordsKey, JSON.stringify(reflection))
+  e.session.set(`${recordsKey}:wool-preview`, JSON.stringify([record]))
+  e.session.set(`${programsKey}:today`, JSON.stringify([program]))
+  await e.boot()
+  const backups = [...e.local].filter(([key]) => key.startsWith(backupPrefix))
+  assert.equal(backups.length, 3)
+  for (const [sourceKey, saved] of e.session) {
+    const prefix = `${backupPrefix}${encodeURIComponent(sourceKey)}:`
+    assert.ok(backups.some(([key, value]) => key.startsWith(prefix) && value === saved))
+  }
+})
+
+test('보관용 백업은 소유 계정 표식이 나중에 바뀌어도 자동 복구에 사용하지 않는다', async () => {
+  const e = environment()
+  const saved = JSON.stringify([program])
+  e.session.set(programsKey, saved)
+  await e.boot()
+  const reopened = environment(e.local, new Map())
+  reopened.account('a')
+  reopened.local.set(ownerKey, 'moyang:user:a')
+  await reopened.boot()
+  assert.deepEqual(plain(reopened.programs.readPrograms()), [])
+  assert.ok(
+    [...reopened.local].some(([key, value]) => key.startsWith(backupPrefix) && value === saved),
+  )
+  assert.equal(reopened.local.has(`${programsKey}:user:a`), false)
+})
+
+test('공간이 부족하면 guest 백업보다 확인된 계정 일정을 먼저 이전한다', async () => {
+  const e = environment()
+  e.account('a')
+  e.local.set(ownerKey, 'moyang:user:a')
+  e.session.set(programsKey, JSON.stringify([program]))
+  e.session.set(
+    `${recordsKey}:guest`,
+    JSON.stringify({
+      ...reflection,
+      records: [{ ...record, card: { todaysStory: 'x'.repeat(1750) } }],
+    }),
+  )
+  e.limit(2200)
+  await e.boot()
+  assert.equal(e.local.has(`${programsKey}:user:a`), true)
+  const reopened = environment(e.local, new Map())
+  await reopened.boot()
+  assert.deepEqual(plain(reopened.programs.readPrograms()), [program])
+})
+
+test('로그인 후 회고를 먼저 읽어도 다른 영역의 계정 일정까지 백업보다 먼저 이전한다', async () => {
+  const e = environment()
+  e.local.set(ownerKey, 'moyang:user:a')
+  e.session.set(programsKey, JSON.stringify([program]))
+  e.session.set(recordsKey, JSON.stringify(reflection))
+  await e.boot()
+  e.account('a')
+  e.session.set(
+    `${recordsKey}:guest`,
+    JSON.stringify({
+      ...reflection,
+      records: [{ ...record, card: { todaysStory: 'x'.repeat(1750) } }],
+    }),
+  )
+  e.limit(2400)
+  assert.equal(e.reflections.getWoolBalance(), 1)
+  await e.settled()
+  assert.equal(e.local.has(`${programsKey}:user:a`), true)
+  assert.equal(e.local.has(`${recordsKey}:user:a`), true)
+  const reopened = environment(e.local, new Map())
+  await reopened.boot()
+  assert.deepEqual(plain(reopened.programs.readPrograms()), [program])
 })

@@ -1,5 +1,6 @@
 const legacyOwnerKey = 'moyang:mock-storage-legacy-owner'
 const legacyReaders = new Map<string, (saved: string | null) => string | undefined>()
+const legacyMigrations = new Map<string, (accountSuffix: string) => void>()
 const migratingKeys = new Set<string>()
 export const mockStorageLock = 'moyang:mock-storage'
 
@@ -21,6 +22,30 @@ const getAccountSuffix = () => {
 }
 
 const keyWithAccount = (key: string, suffix: string) => `${key}${suffix || ':guest'}`
+
+const backupUnownedSession = (key: string) => {
+  try {
+    const owner = localStorage.getItem(legacyOwnerKey)
+    const sourceKeys = owner && owner !== 'moyang' ? [`${key}:guest`] : [key, `${key}:guest`]
+    for (const sourceKey of sourceKeys) {
+      const saved = sessionStorage.getItem(sourceKey)
+      if (saved === null) continue
+
+      const prefix = `moyang:mock-storage-backup:session:${encodeURIComponent(sourceKey)}:`
+      let backedUp = false
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const backupKey = localStorage.key(index)
+        if (backupKey?.startsWith(prefix) && localStorage.getItem(backupKey) === saved) {
+          backedUp = true
+          break
+        }
+      }
+      if (!backedUp) localStorage.setItem(`${prefix}${crypto.randomUUID()}`, saved)
+    }
+  } catch {
+    // 백업에 실패해도 세션 원본은 삭제하지 않는다.
+  }
+}
 
 export const getMockStorageKey = (key: string) => keyWithAccount(key, getAccountSuffix())
 
@@ -62,12 +87,15 @@ export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T 
 
 export const migrateLegacyMockStorage = async (migrate: (accountSuffix: string) => void) => {
   try {
-    // 로그인 전에는 읽기 경로만 등록한다.
     migrate('')
-    const accountSuffix = getAccountSuffix()
-    if (!accountSuffix) return
+    const scope = getMockStorageScope()
     const migrateForAccount = () => {
-      if (getAccountSuffix() === accountSuffix) migrate(accountSuffix)
+      if (getMockStorageScope() !== scope) return
+      if (scope && scope !== 'moyang') {
+        const accountSuffix = scope.slice('moyang'.length)
+        for (const migrateKey of legacyMigrations.values()) migrateKey(accountSuffix)
+      }
+      for (const key of legacyMigrations.keys()) backupUnownedSession(key)
     }
     if (navigator.locks) await navigator.locks.request(mockStorageLock, migrateForAccount)
     else migrateForAccount()
@@ -126,6 +154,7 @@ export const migrateLegacyMockKey = <T>(
     }
   }
 
+  legacyMigrations.set(key, migrateForAccount)
   legacyReaders.set(key, (saved) => {
     const suffix = getAccountSuffix()
     if (!suffix || localStorage.getItem(legacyOwnerKey) !== `moyang${suffix}`) return
