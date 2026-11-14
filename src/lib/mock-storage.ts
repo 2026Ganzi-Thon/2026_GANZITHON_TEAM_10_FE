@@ -1,5 +1,6 @@
 const legacyOwnerKey = 'moyang:mock-storage-legacy-owner'
-const pendingMigrations = new Map<string, (saved: string | null) => string>()
+const legacyReaders = new Map<string, (saved: string | null) => string | undefined>()
+const migratingKeys = new Set<string>()
 export const mockStorageLock = 'moyang:mock-storage'
 
 const getAccountSuffix = () => {
@@ -33,18 +34,22 @@ export const getMockStorageScope = () => {
 
 export const writeMockStorage = (key: string, data: unknown) => {
   localStorage.setItem(key, JSON.stringify(data))
-  pendingMigrations.delete(key)
 }
 
 export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T | null => {
   const local = localStorage.getItem(key)
-  const saved = local ?? sessionStorage.getItem(key)
-  const pending = pendingMigrations.get(key)
-  if (pending) return parse(pending(saved))
+  const stored = local ?? sessionStorage.getItem(key)
+  const accountSuffix = getAccountSuffix()
+  const readLegacy =
+    accountSuffix && key.endsWith(accountSuffix)
+      ? legacyReaders.get(key.slice(0, -accountSuffix.length))
+      : undefined
+  const legacy = readLegacy?.(stored)
+  const saved = legacy ?? stored
   if (saved === null) return null
 
   const data = parse(saved)
-  if (local === null) {
+  if (local === null && legacy === undefined) {
     try {
       writeMockStorage(key, data)
       sessionStorage.removeItem(key)
@@ -57,7 +62,10 @@ export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T 
 
 export const migrateLegacyMockStorage = async (migrate: (accountSuffix: string) => void) => {
   try {
+    // 로그인 전에는 읽기 경로만 등록한다.
+    migrate('')
     const accountSuffix = getAccountSuffix()
+    if (!accountSuffix) return
     const migrateForAccount = () => {
       if (getAccountSuffix() === accountSuffix) migrate(accountSuffix)
     }
@@ -74,40 +82,65 @@ export const migrateLegacyMockKey = <T>(
   parse: (saved: string) => T,
   merge: (current: T, legacy: T) => T,
 ) => {
-  try {
-    const scope = `moyang${accountSuffix}`
-    const owner = localStorage.getItem(legacyOwnerKey)
-    if (owner && owner !== scope) return
-
-    const sources = [localStorage, sessionStorage].flatMap((storage) => {
-      const saved = storage.getItem(key)
-      if (saved === null) return []
+  const readSources = () =>
+    [localStorage, sessionStorage].flatMap((storage) => {
       try {
-        return [{ storage, data: parse(saved) }]
+        const saved = storage.getItem(key)
+        if (saved === null) return []
+        return [{ storage, saved, data: parse(saved) }]
       } catch {
         return []
       }
     })
-    if (!sources.length) return
-    if (!owner) localStorage.setItem(legacyOwnerKey, scope)
 
-    const scopedKey = keyWithAccount(key, accountSuffix)
-    const mergeSources = (current: string | null) =>
-      sources.reduce<T | null>(
-        (data, source) => (data === null ? source.data : merge(data, source.data)),
-        current === null ? null : parse(current),
-      )
-    const migrated = mergeSources(
-      localStorage.getItem(scopedKey) ?? sessionStorage.getItem(scopedKey),
+  const mergeSources = (current: string | null, sources: ReturnType<typeof readSources>) =>
+    sources.reduce<T | null>(
+      (data, source) => (data === null ? source.data : merge(data, source.data)),
+      current === null ? null : parse(current),
     )
+
+  const migrateForAccount = (suffix: string) => {
     try {
+      if (
+        !suffix ||
+        getAccountSuffix() !== suffix ||
+        localStorage.getItem(legacyOwnerKey) !== `moyang${suffix}`
+      ) {
+        return
+      }
+
+      const sources = readSources()
+      if (!sources.length) return
+
+      const scopedKey = keyWithAccount(key, suffix)
+      const migrated = mergeSources(
+        localStorage.getItem(scopedKey) ?? sessionStorage.getItem(scopedKey),
+        sources,
+      )
       writeMockStorage(scopedKey, migrated)
+      for (const { storage, saved } of sources) {
+        if (storage.getItem(key) === saved) storage.removeItem(key)
+      }
     } catch {
-      pendingMigrations.set(scopedKey, (current) => JSON.stringify(mergeSources(current)))
-      return
+      // 이전에 실패하면 원본을 다음 실행까지 보관한다.
     }
-    for (const { storage } of sources) storage.removeItem(key)
-  } catch {
-    // 이전에 실패하면 원본을 다음 실행까지 보관한다.
   }
+
+  legacyReaders.set(key, (saved) => {
+    const suffix = getAccountSuffix()
+    if (!suffix || localStorage.getItem(legacyOwnerKey) !== `moyang${suffix}`) return
+    const sources = readSources()
+    if (!sources.length) return
+    const merged = JSON.stringify(mergeSources(saved, sources))
+    const scopedKey = keyWithAccount(key, suffix)
+    if (!migratingKeys.has(scopedKey)) {
+      migratingKeys.add(scopedKey)
+      void migrateLegacyMockStorage(migrateForAccount).finally(() =>
+        migratingKeys.delete(scopedKey),
+      )
+    }
+    return merged
+  })
+
+  migrateForAccount(accountSuffix)
 }
