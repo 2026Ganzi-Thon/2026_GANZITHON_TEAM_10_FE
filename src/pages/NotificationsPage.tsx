@@ -1,8 +1,4 @@
-/**
- * 알림 화면을 담당한다.
- *
- * @returns 페이지 요소 또는 화면 구현 전 null
- */
-export const NotificationsPage = () => {
-  return null
-}
+import { Notifications } from '@/features/notifications'
+
+/** 알림 화면을 표시한다. */
+export const NotificationsPage = () => <Notifications />

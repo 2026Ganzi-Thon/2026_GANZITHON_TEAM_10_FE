@@ -1,0 +1,126 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+.header {
+  padding: 16px 18px;
+}
+.header button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 25px 35px 32px;
+}
+.profile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 132px;
+  padding: 10px 16px 8px;
+  border-radius: 16px;
+  color: white;
+  background: var(--color-primary);
+}
+.stat {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+  white-space: nowrap;
+}
+.stat strong {
+  font-weight: 700;
+}
+.avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.avatarImage {
+  display: flex;
+  width: 95px;
+  height: 95px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: white;
+}
+.avatar button {
+  min-width: 36px;
+  min-height: 24px;
+  border: 0;
+  color: white;
+  background: none;
+  cursor: pointer;
+}
+.form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+  margin-top: 40px;
+}
+.form h1 {
+  margin: 0 4px 6px;
+  font-weight: 600;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--color-surface-green);
+}
+.card p {
+  margin: 0;
+}
+.input {
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  background: transparent;
+}
+.error {
+  color: #a43d3d;
+  font-size: var(--font-size-caption);
+}
+.error button {
+  border: 0;
+  color: inherit;
+  background: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.colors {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 16px;
+}
+.color {
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+}
+.color img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.selected {
+  border-color: var(--color-primary);
+}

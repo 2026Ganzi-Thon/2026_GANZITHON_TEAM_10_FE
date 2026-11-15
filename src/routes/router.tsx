@@ -8,6 +8,7 @@ import { OnboardingConcernsPage } from '@/pages/OnboardingConcernsPage'
 import { OnboardingEmotionsPage } from '@/pages/OnboardingEmotionsPage'
 import { OnboardingStoryPage } from '@/pages/OnboardingStoryPage'
 import { HomePage } from '@/pages/HomePage'
+import { AboutPage } from '@/pages/AboutPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { DrawingPage } from '@/pages/DrawingPage'
 import { DrawingOnboardingFirstPage } from '@/pages/DrawingOnboardingFirstPage'
@@ -26,6 +27,8 @@ import { MeetingChatPage } from '@/pages/MeetingChatPage'
 import { RecordsPage } from '@/pages/RecordsPage'
 import { RecordDetailPage } from '@/pages/RecordDetailPage'
 import { MyPage } from '@/pages/MyPage'
+import { ProfilePage } from '@/pages/ProfilePage'
+import { PlansPage } from '@/pages/PlansPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { RootEntryError } from '@/pages/RootEntryError'
 import axios from 'axios'
@@ -82,6 +85,7 @@ export const router = createBrowserRouter([
       { path: '/onboarding/emotions', element: <OnboardingEmotionsPage /> },
       { path: '/onboarding/story', element: <OnboardingStoryPage /> },
       { path: '/home', element: <HomePage /> },
+      { path: '/about', element: <AboutPage /> },
       { path: '/notifications', element: <NotificationsPage /> },
       { path: '/drawing', element: <DrawingPage /> },
       { path: '/drawing/onboarding/1', element: <DrawingOnboardingFirstPage /> },
@@ -100,6 +104,8 @@ export const router = createBrowserRouter([
       { path: '/records', element: <RecordsPage /> },
       { path: '/records/:recordId', element: <RecordDetailPage /> },
       { path: '/my', element: <MyPage /> },
+      { path: '/my/profile', element: <ProfilePage /> },
+      { path: '/my/plans', element: <PlansPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
