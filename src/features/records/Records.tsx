@@ -39,9 +39,10 @@ export const Records = () => {
   const [recent, setRecent] = useState<RecordItem[] | null>(null)
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasNext, setHasNext] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<'' | 'calendar' | 'recent' | 'more'>('')
   const [loadingMore, setLoadingMore] = useState(false)
-  const [attempt, setAttempt] = useState(0)
+  const [calendarAttempt, setCalendarAttempt] = useState(0)
+  const [recentAttempt, setRecentAttempt] = useState(0)
   const pageRef = useRef<HTMLDivElement>(null)
   const monthValue = monthKey(month)
   useEffect(() => {
@@ -58,10 +59,10 @@ export const Records = () => {
         setCalendar(data.data.records)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setError('달력을 불러오지 못했어요.')
+        if (!controller.signal.aborted) setError('calendar')
       })
     return () => controller.abort()
-  }, [monthValue, preview, attempt])
+  }, [monthValue, preview, calendarAttempt])
   useEffect(() => {
     if (preview || tab !== 'recent') return
     const controller = new AbortController()
@@ -78,10 +79,10 @@ export const Records = () => {
         setHasNext(data.data.hasNext)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setError('최근 기록을 불러오지 못했어요.')
+        if (!controller.signal.aborted) setError('recent')
       })
     return () => controller.abort()
-  }, [preview, tab, attempt])
+  }, [preview, tab, recentAttempt])
   const calendarItems = preview ? (empty ? [] : mockItems(monthValue)) : calendar
   const recentItems = preview ? (empty ? [] : mockItems(monthValue).reverse()) : recent
   const firstDay = new Date(month.getFullYear(), month.getMonth(), 1).getDay()
@@ -110,7 +111,7 @@ export const Records = () => {
       setCursor(data.data.nextCursor)
       setHasNext(data.data.hasNext)
     } catch {
-      setError('기록을 더 불러오지 못했어요.')
+      setError('more')
     } finally {
       setLoadingMore(false)
     }
@@ -281,11 +282,17 @@ export const Records = () => {
           )}
           {error && (
             <p className={styles.status} role="alert">
-              {error}{' '}
+              {error === 'calendar'
+                ? '달력을 불러오지 못했어요.'
+                : error === 'recent'
+                  ? '최근 기록을 불러오지 못했어요.'
+                  : '기록을 더 불러오지 못했어요.'}{' '}
               <button
                 onClick={() => {
                   setError('')
-                  setAttempt((value) => value + 1)
+                  if (error === 'more') void more()
+                  else if (error === 'calendar') setCalendarAttempt((value) => value + 1)
+                  else setRecentAttempt((value) => value + 1)
                 }}
               >
                 다시 시도

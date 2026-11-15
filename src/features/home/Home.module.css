@@ -227,7 +227,7 @@
   padding: 0;
   list-style: none;
 }
-.meetings a {
+.meetings li > div {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;

@@ -213,8 +213,23 @@ export const Home = () => {
               </button>
             </div>
           )}
+          {sheep.data && (
+            <section className={`${styles.card} ${styles.sheep}`}>
+              <img src={cardSheep} alt="" />
+              <div>
+                <h2>나의 양털</h2>
+                <p>
+                  <strong>{sheep.data.balance}개</strong> 모았어요
+                </p>
+                <small>그림을 그릴 때마다 양털이 하나씩 쌓여요.</small>
+              </div>
+            </section>
+          )}
           {noActivity ? (
-            <Link to="/drawing" className={`${styles.card} ${styles.empty}`}>
+            <Link
+              to={preview ? '/drawing?preview' : '/drawing'}
+              className={`${styles.card} ${styles.empty}`}
+            >
               <div>
                 <h2>아직 예정된 활동이 없어요</h2>
                 <p>
@@ -227,18 +242,6 @@ export const Home = () => {
             </Link>
           ) : (
             <>
-              {sheep.data && (
-                <section className={`${styles.card} ${styles.sheep}`}>
-                  <img src={cardSheep} alt="" />
-                  <div>
-                    <h2>나의 양털</h2>
-                    <p>
-                      <strong>{sheep.data.balance}개</strong> 모았어요
-                    </p>
-                    <small>그림을 그릴 때마다 양털이 하나씩 쌓여요.</small>
-                  </div>
-                </section>
-              )}
               {record.data && (
                 <section className={styles.card}>
                   <div className={styles.cardHeader}>
@@ -302,9 +305,8 @@ export const Home = () => {
                       <ul className={styles.meetings}>
                         {meetings.data.meetings.map((meeting) => (
                           <li key={meeting.meetingId}>
-                            <Link to={`/meetings/${meeting.meetingId}`}>
+                            <div>
                               <strong>{meeting.title}</strong>
-                              <FontAwesomeIcon icon={faChevronRight} />
                               <span className={styles.meetingDetails}>
                                 <span>
                                   <FontAwesomeIcon icon={faCalendarDays} />
@@ -315,7 +317,7 @@ export const Home = () => {
                                   예약 {meeting.participantCount}/{meeting.capacity}명
                                 </span>
                               </span>
-                            </Link>
+                            </div>
                           </li>
                         ))}
                       </ul>
