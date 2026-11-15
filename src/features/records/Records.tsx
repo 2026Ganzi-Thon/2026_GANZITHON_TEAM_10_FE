@@ -35,11 +35,13 @@ export const Records = () => {
   const [month, setMonth] = useState(() => new Date(`${today()}T12:00:00`))
   const [tab, setTab] = useState<'calendar' | 'recent'>('calendar')
   const [selected, setSelected] = useState<string | null>(null)
+  const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null)
   const [calendar, setCalendar] = useState<RecordItem[] | null>(null)
   const [recent, setRecent] = useState<RecordItem[] | null>(null)
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasNext, setHasNext] = useState(false)
-  const [error, setError] = useState<'' | 'calendar' | 'recent' | 'more'>('')
+  const [calendarError, setCalendarError] = useState(false)
+  const [error, setError] = useState<'' | 'recent' | 'more'>('')
   const [loadingMore, setLoadingMore] = useState(false)
   const [calendarAttempt, setCalendarAttempt] = useState(0)
   const [recentAttempt, setRecentAttempt] = useState(0)
@@ -59,7 +61,7 @@ export const Records = () => {
         setCalendar(data.data.records)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setError('calendar')
+        if (!controller.signal.aborted) setCalendarError(true)
       })
     return () => controller.abort()
   }, [monthValue, preview, calendarAttempt])
@@ -87,14 +89,19 @@ export const Records = () => {
   const recentItems = preview ? (empty ? [] : mockItems(monthValue).reverse()) : recent
   const firstDay = new Date(month.getFullYear(), month.getMonth(), 1).getDay()
   const selectedItems = calendarItems?.filter((item) => item.recordDate === selected) ?? []
-  const showInlineDetail = tab === 'calendar' && selectedItems.length > 0
+  const selectedRecord =
+    selectedItems.length === 1
+      ? selectedItems[0]
+      : selectedItems.find((item) => item.recordId === selectedRecordId)
+  const showInlineDetail = tab === 'calendar' && Boolean(selectedRecord)
   useEffect(() => {
     if (showInlineDetail) pageRef.current?.scrollIntoView({ block: 'start' })
   }, [showInlineDetail])
   const changeMonth = (amount: number) => {
     setCalendar(null)
-    setError('')
+    setCalendarError(false)
     setSelected(null)
+    setSelectedRecordId(null)
     setMonth(new Date(month.getFullYear(), month.getMonth() + amount, 1))
   }
   const more = async () => {
@@ -174,19 +181,18 @@ export const Records = () => {
             </button>
           </div>
         </header>
-        <main
-          className={
-            selectedItems.length && tab === 'calendar' ? styles.inlineContent : styles.content
-          }
-        >
+        <main className={showInlineDetail ? styles.inlineContent : styles.content}>
           {tab === 'calendar' ? (
-            selectedItems.length ? (
+            selectedRecord ? (
               <RecordDetailContent
-                key={selectedItems[0].recordId}
-                recordId={String(selectedItems[0].recordId)}
+                key={selectedRecord.recordId}
+                recordId={String(selectedRecord.recordId)}
                 preview={preview}
-                record={selectedItems[0]}
-                onClose={() => setSelected(null)}
+                record={selectedRecord}
+                onClose={() => {
+                  if (selectedItems.length > 1) setSelectedRecordId(null)
+                  else setSelected(null)
+                }}
               />
             ) : (
               <>
@@ -228,7 +234,10 @@ export const Records = () => {
                           aria-pressed={selected === date}
                           aria-current={date === today() ? 'date' : undefined}
                           disabled={!inMonth}
-                          onClick={() => setSelected(date)}
+                          onClick={() => {
+                            setSelected(date)
+                            setSelectedRecordId(null)
+                          }}
                         >
                           {record?.imageUrl && (
                             <span className={styles.dayImage}>
@@ -249,9 +258,29 @@ export const Records = () => {
                     })}
                   </div>
                 </section>
-                {calendarItems === null && !error ? (
+                {selectedItems.length > 1 ? (
+                  <section aria-label="선택한 날짜의 기록">
+                    <h2>{selected}의 기록</h2>
+                    <ul className={styles.cards}>
+                      {selectedItems.map((item) => (
+                        <li key={item.recordId}>
+                          <button
+                            className={styles.recordChoice}
+                            onClick={() => setSelectedRecordId(item.recordId)}
+                          >
+                            <span className={styles.thumbnail}>
+                              <RecordImage url={item.imageUrl} preview={preview} />
+                            </span>
+                            <strong>{item.title || '나의 그림 기록'}</strong>
+                            <FontAwesomeIcon icon={faChevronRight} aria-hidden="true" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : calendarItems === null && !calendarError ? (
                   <p className={styles.status}>기록을 불러오고 있어요.</p>
-                ) : selected ? (
+                ) : calendarItems !== null && selected ? (
                   <p className={styles.empty}>
                     <FontAwesomeIcon icon={faCircleInfo} /> 선택한 날짜에 기록이 없어요.
                   </p>
@@ -280,18 +309,28 @@ export const Records = () => {
               </p>
             )
           )}
-          {error && (
+          {tab === 'calendar' && calendarError && (
             <p className={styles.status} role="alert">
-              {error === 'calendar'
-                ? '달력을 불러오지 못했어요.'
-                : error === 'recent'
-                  ? '최근 기록을 불러오지 못했어요.'
-                  : '기록을 더 불러오지 못했어요.'}{' '}
+              달력을 불러오지 못했어요.{' '}
+              <button
+                onClick={() => {
+                  setCalendarError(false)
+                  setCalendarAttempt((value) => value + 1)
+                }}
+              >
+                다시 시도
+              </button>
+            </p>
+          )}
+          {tab === 'recent' && error && (
+            <p className={styles.status} role="alert">
+              {error === 'recent'
+                ? '최근 기록을 불러오지 못했어요.'
+                : '기록을 더 불러오지 못했어요.'}{' '}
               <button
                 onClick={() => {
                   setError('')
                   if (error === 'more') void more()
-                  else if (error === 'calendar') setCalendarAttempt((value) => value + 1)
                   else setRecentAttempt((value) => value + 1)
                 }}
               >

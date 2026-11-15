@@ -4,9 +4,13 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faBell, faCircleInfo } from '@fortawesome/free-solid-svg-icons'
 import { Button, HomeLayout } from '@/components'
 import { apiClient } from '@/lib/api-client'
-import sheep from '@/assets/home/home-banner-3.png'
+import banner1 from '@/assets/drawing/drawing-banner-1.png'
+import banner2 from '@/assets/drawing/drawing-banner-2.png'
+import banner3 from '@/assets/drawing/drawing-banner-3.png'
+import banner4 from '@/assets/drawing/drawing-banner-4.png'
 import styles from './DrawingHome.module.css'
 
+const banners = [banner1, banner2, banner3, banner4]
 type Option = { code: string; label: string }
 type Profile = {
   nickname: string
@@ -25,6 +29,7 @@ export const DrawingHome = () => {
   const { search } = useLocation()
   const navigate = useNavigate()
   const preview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
+  const [banner] = useState(() => banners[Math.floor(Math.random() * banners.length)])
   const [info, setInfo] = useState<Info | null>(
     preview ? { nickname: '딸기를 좋아하는 양', tags: ['인간관계·가족', '불안해요'] } : null,
   )
@@ -88,7 +93,7 @@ export const DrawingHome = () => {
             <br />
             그림 주제를 준비했어요.
           </p>
-          <img className={styles.sheep} src={sheep} alt="" />
+          <img className={styles.sheep} src={banner} alt="" />
           <section className={styles.info} aria-label="현재 반영된 정보">
             <span className={styles.infoTitle}>
               <span>
