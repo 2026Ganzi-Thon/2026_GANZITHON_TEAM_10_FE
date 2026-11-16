@@ -1,3 +1,11 @@
-import { MeetingHandoff } from '@/features/meeting-list/MeetingHandoff'
+import { useParams } from 'react-router-dom'
+import { useMockStorageScope } from '@/hooks/useMockStorageScope'
+import { MeetingReservation } from '@/features/meeting-reservation/MeetingReservation'
 
-export const MeetingDetailPage = () => <MeetingHandoff />
+export const MeetingDetailPage = () => {
+  const { meetingId = '' } = useParams<'meetingId'>()
+  const scope = useMockStorageScope()
+  return (
+    <MeetingReservation key={`${scope}:${meetingId}`} meetingId={meetingId} storageScope={scope} />
+  )
+}
