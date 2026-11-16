@@ -234,6 +234,8 @@ test('full and simulated network failures do not charge or join', async () => {
 test('application and cancellation write failures roll back, retry succeeds once', async () => {
   const e = environment()
   e.seed()
+  const key = e.storage.getMockStorageKey('moyang:mock-reflection-records')
+  e.session.set(key, e.values.get(key))
   const before = JSON.stringify([...e.values])
   e.fail(true)
   await assert.rejects(e.reservation.applyForMeeting('211', signal()), /quota/)
@@ -294,6 +296,22 @@ test('switching accounts after reading the wallet leaves the two stores unchange
   await assert.rejects(e.reservation.applyForMeeting('211', signal()), /로그인 정보/)
   assert.equal(e.values.get(keyA), a)
   assert.equal(e.values.get(keyB), b)
+})
+
+test('an identical session copy does not block cancellation after applying', async () => {
+  const e = environment()
+  e.seed()
+  const key = e.storage.getMockStorageKey('moyang:mock-reflection-records')
+  const records = e.reflections.readReflections().records
+  e.session.set(key, e.values.get(key))
+
+  assert.equal((await e.reservation.applyForMeeting('211', signal())).applied, true)
+  assert.equal(e.session.has(key), false)
+  assert.equal(e.reflections.getWoolBalance(), 2)
+  assert.equal((await e.reservation.cancelReservation('211', signal())).refunded, true)
+  assert.equal(e.meetings.getMockMeeting('211').membership, undefined)
+  assert.equal(e.reflections.getWoolBalance(), 3)
+  assert.deepEqual(e.reflections.readReflections().records, records)
 })
 
 test('a blocked or conflicting session keeps the reservation and wool unchanged', async () => {
@@ -473,6 +491,7 @@ test('legacy reflection migration preserves the new booking ledger', async () =>
   e.account('a')
   e.seed()
   await e.reservation.applyForMeeting('211', signal())
+  e.values.set('moyang:mock-storage-legacy-owner', 'moyang:user:a')
   e.values.set(
     'moyang:mock-reflection-records',
     JSON.stringify([{ drawingId: 90, recordDate: '2026-10-20', sheepReward: 1 }]),

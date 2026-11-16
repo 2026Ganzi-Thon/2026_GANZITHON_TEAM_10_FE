@@ -155,6 +155,7 @@ export const updateMeetingReservation = <T>(
     const { result, reservation } = update(store)
     if (key !== getReflectionStorageKey()) throw new Error('로그인 정보가 변경됐어요.')
     if (reservation) {
+      if (session !== null && session === local) sessionStorage.removeItem(key)
       writeMockStorage(key, {
         ...store,
         meetingReservations: { ...store.meetingReservations, [id]: reservation },
