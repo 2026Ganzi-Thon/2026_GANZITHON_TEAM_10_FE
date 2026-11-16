@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faPenToSquare } from '@fortawesome/free-solid-svg-icons'
 import { Button, Input, Modal, SheepProfile } from '@/components'
-import { apiClient } from '@/lib/api-client'
+import { apiClient, getAccessToken } from '@/lib/api-client'
 import { colors, readPreviewColor, readPreviewNickname, writePreviewValue } from './preview'
 import type { SheepColor } from './preview'
 import styles from './ProfileEdit.module.css'
@@ -31,6 +31,14 @@ export const ProfileEdit = () => {
   const [sheepError, setSheepError] = useState(false)
   const [open, setOpen] = useState(false)
   const [retry, setRetry] = useState(0)
+
+  const active = useRef(true)
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (preview) return
@@ -71,6 +79,7 @@ export const ProfileEdit = () => {
       setError('닉네임은 2~15자로 입력해 주세요.')
       return
     }
+    const token = getAccessToken()
     setSaving(true)
     setError('')
     try {
@@ -81,11 +90,13 @@ export const ProfileEdit = () => {
         })
         if (!data.success) throw new Error('Save failed')
       }
-      navigate(`/my${preview ? '?preview' : ''}`)
+      if (active.current && (preview || getAccessToken() === token))
+        navigate(`/my${preview ? '?preview' : ''}`)
     } catch {
-      setError('닉네임을 저장하지 못했어요. 다시 시도해 주세요.')
+      if (active.current && (preview || getAccessToken() === token))
+        setError('닉네임을 저장하지 못했어요. 다시 시도해 주세요.')
     } finally {
-      setSaving(false)
+      if (active.current) setSaving(false)
     }
   }
 

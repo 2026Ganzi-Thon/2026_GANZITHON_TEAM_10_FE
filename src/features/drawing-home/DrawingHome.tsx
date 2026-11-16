@@ -26,7 +26,7 @@ type Info = { nickname: string; tags: string[] }
 
 /** 내 정보와 선택지 문구를 함께 불러와 현재 주제에 반영된 정보를 표시한다. */
 export const DrawingHome = () => {
-  const { search } = useLocation()
+  const { search, state } = useLocation()
   const navigate = useNavigate()
   const preview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
   const [banner] = useState(() => banners[Math.floor(Math.random() * banners.length)])
@@ -127,7 +127,11 @@ export const DrawingHome = () => {
             </button>
           )}
           <div className={styles.actions}>
-            <Button onClick={() => navigate(`/drawing/onboarding/2${preview ? '?preview' : ''}`)}>
+            <Button
+              onClick={() =>
+                navigate(`/drawing/onboarding/2${preview ? '?preview' : ''}`, { state })
+              }
+            >
               주제 확인하기
             </Button>
             <Link to={`/onboarding/profile?page=3${preview ? '&preview' : ''}`}>

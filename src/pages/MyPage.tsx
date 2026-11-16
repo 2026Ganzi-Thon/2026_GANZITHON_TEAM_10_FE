@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -16,7 +16,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { HomeLayout, Modal, SheepProfile } from '@/components'
-import { apiClient, setAccessToken } from '@/lib/api-client'
+import { apiClient, getAccessToken, setAccessToken } from '@/lib/api-client'
 import { readPreviewColor } from '@/features/profile'
 import { readPreviewPlan } from '@/features/plans'
 import styles from './MyPage.module.css'
@@ -75,6 +75,14 @@ export const MyPage = () => {
   const [withdrawing, setWithdrawing] = useState(false)
   const [withdrawError, setWithdrawError] = useState('')
 
+  const active = useRef(true)
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
+
   useEffect(() => {
     if (preview) return
     const controller = new AbortController()
@@ -100,20 +108,24 @@ export const MyPage = () => {
     navigate('/onboarding')
   }
   const withdraw = async () => {
+    const token = getAccessToken()
     setWithdrawing(true)
     setWithdrawError('')
     try {
       if (!preview) {
         const response = await apiClient.delete<{ success: boolean }>('/api/users/me')
         if (response.data && !response.data.success) throw new Error('Withdrawal failed')
+        if (getAccessToken() !== token) return
         setAccessToken(null)
       }
+      if (!active.current) return
       setWithdrawOpen(false)
       navigate('/onboarding', { replace: true })
     } catch {
-      setWithdrawError('회원 탈퇴를 처리하지 못했어요. 다시 시도해 주세요.')
+      if (active.current && (preview || getAccessToken() === token))
+        setWithdrawError('회원 탈퇴를 처리하지 못했어요. 다시 시도해 주세요.')
     } finally {
-      setWithdrawing(false)
+      if (active.current) setWithdrawing(false)
     }
   }
   const suffix = preview ? '?preview' : ''

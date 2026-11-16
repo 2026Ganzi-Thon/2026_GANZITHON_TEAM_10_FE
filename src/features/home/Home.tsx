@@ -221,7 +221,7 @@ export const Home = () => {
                 <p>
                   <strong>{sheep.data.balance}개</strong> 모았어요
                 </p>
-                <small>그림을 그릴 때마다 양털이 하나씩 쌓여요.</small>
+                <small>하루 첫 회고를 저장하면 양털 1개를 받아요.</small>
               </div>
             </section>
           )}

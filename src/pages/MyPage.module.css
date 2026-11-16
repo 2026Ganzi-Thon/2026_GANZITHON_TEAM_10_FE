@@ -5,11 +5,16 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  min-height: 28px;
+  height: 64px;
+  margin: -20px -35px 0;
+  padding: 0 12px;
 }
 .header a {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
   color: var(--color-black);
-  padding: 5px;
 }
 .profile {
   margin: 37px 0 30px;
