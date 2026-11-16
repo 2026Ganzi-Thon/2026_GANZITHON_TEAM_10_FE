@@ -424,10 +424,13 @@ export const MeetingList = () => {
   const scenario = import.meta.env.DEV ? searchParams.get('mock') : null
   const [attempt, setAttempt] = useState(0)
   const [list, setList] = useState<MeetingListData | 'error' | null>(null)
-  const availableMeetings =
-    list && list !== 'error' ? list.meetings.filter(({ status }) => status !== 'cancelled') : []
-  const discoverableMeetings = availableMeetings.filter(({ status }) => status === 'waiting')
-  const joinedLiveMeetings = availableMeetings.filter(
+  const [now, setNow] = useState(Date.now)
+  const meetings = list && list !== 'error' ? list.meetings : []
+  const myMeetings = list && list !== 'error' ? list.myMeetings : []
+  const discoverableMeetings = meetings.filter(
+    (meeting) => meeting.status === 'waiting' && (meeting.kind === 'live' || meeting.startAt > now),
+  )
+  const joinedLiveMeetings = myMeetings.filter(
     ({ kind, membership, hasEntered }) =>
       kind === 'live' && membership === 'participant' && hasEntered,
   )
@@ -461,11 +464,6 @@ export const MeetingList = () => {
   useEffect(() => {
     let active = true
 
-    const refresh = (event: StorageEvent) => {
-      if (isMeetingStorageEvent(event)) setAttempt((value) => value + 1)
-    }
-    window.addEventListener('storage', refresh)
-
     loadMeetingList({
       empty: scenario === 'empty',
       fail: scenario === 'error',
@@ -475,7 +473,10 @@ export const MeetingList = () => {
       delay: scenario === 'loading' ? 5000 : undefined,
     }).then(
       (data) => {
-        if (active) setList(data)
+        if (active) {
+          setNow(Date.now())
+          setList(data)
+        }
       },
       () => {
         if (active) setList('error')
@@ -484,9 +485,33 @@ export const MeetingList = () => {
 
     return () => {
       active = false
-      window.removeEventListener('storage', refresh)
     }
   }, [scenario, attempt])
+
+  useEffect(() => {
+    const refresh = (event: StorageEvent) => {
+      if (isMeetingStorageEvent(event)) setAttempt((value) => value + 1)
+    }
+    window.addEventListener('storage', refresh)
+    return () => window.removeEventListener('storage', refresh)
+  }, [])
+
+  useEffect(() => {
+    if (!list || list === 'error') return
+    const nextStart = list.meetings.reduce(
+      (next, meeting) =>
+        meeting.kind === 'scheduled' && meeting.status === 'waiting' && meeting.startAt > now
+          ? Math.min(next, meeting.startAt)
+          : next,
+      Infinity,
+    )
+    if (!Number.isFinite(nextStart)) return
+    const timer = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.min(Math.max(0, nextStart - Date.now()), 2_147_483_647),
+    )
+    return () => window.clearTimeout(timer)
+  }, [list, now])
 
   useLayoutEffect(() => {
     if (!list || list === 'error') return
@@ -520,7 +545,7 @@ export const MeetingList = () => {
     if (!list || list === 'error') return
     const scroller = pageRef.current?.parentElement
     returnMeetingRef.current = undefined
-    return () => {
+    const savePosition = () => {
       const position: ReturnPosition = {
         key,
         search,
@@ -533,6 +558,11 @@ export const MeetingList = () => {
       } catch {
         return
       }
+    }
+    window.addEventListener('pagehide', savePosition)
+    return () => {
+      window.removeEventListener('pagehide', savePosition)
+      savePosition()
     }
   }, [key, search, expandedSections, list])
 
@@ -726,7 +756,7 @@ export const MeetingList = () => {
                 title="내가 만든 모임"
                 role="방장"
                 emptyMessage="만든 모임이 아직 없어요"
-                meetings={availableMeetings.filter(({ membership }) => membership === 'host')}
+                meetings={myMeetings.filter(({ membership }) => membership === 'host')}
                 concern={concern}
                 onNotice={setActiveNotice}
               />
@@ -734,7 +764,7 @@ export const MeetingList = () => {
                 title="예약한 모임"
                 role="참여자"
                 emptyMessage="예약한 모임이 아직 없어요"
-                meetings={availableMeetings.filter(
+                meetings={myMeetings.filter(
                   ({ kind, membership }) => kind === 'scheduled' && membership === 'participant',
                 )}
                 concern={concern}

@@ -2,6 +2,8 @@ import {
   applyWaitingRoomStatus,
   isWaitingRoomStorageEvent,
 } from '@/features/meeting-waiting-room/waitingRoomMock'
+import { readReflections } from '@/lib/mock-reflections'
+import type { MockMeetingReservation } from '@/lib/mock-reflections'
 
 export const meetingConcerns = [
   { id: 'STUDY_CAREER', label: '학업·진로·일' },
@@ -42,7 +44,11 @@ export type PastMeeting = Pick<MeetingInfo, 'id' | 'title' | 'concern'> & {
 
 export const pastConversationDuration = 24 * 60 * 60 * 1000
 
-export type MeetingListData = { meetings: Meeting[]; pastMeetings: PastMeeting[] }
+export type MeetingListData = {
+  meetings: Meeting[]
+  myMeetings: Meeting[]
+  pastMeetings: PastMeeting[]
+}
 
 const day = 86_400_000
 const now = Date.now()
@@ -107,6 +113,17 @@ const scheduledMeetings: ScheduledMeeting[] = [
     capacity: 6,
     status: 'waiting',
     membership: 'participant',
+  },
+  {
+    id: '211',
+    title: '마음을 나누는 시간',
+    description: '관계 속에서 느낀 감정을 그림으로 표현하고 서로의 이야기를 나눠요.',
+    concern: 'RELATION_FAMILY',
+    kind: 'scheduled',
+    startAt: atKst('20:00:00', 3),
+    participants: 2,
+    capacity: 6,
+    status: 'waiting',
   },
 ]
 
@@ -189,6 +206,21 @@ const meetingStates: Meeting[] = [
     participants: 2,
     status: 'in-progress',
   },
+  { ...scheduledMeetings[1], id: '212', startAt: now + 9 * 60 * 1000 },
+  { ...scheduledMeetings[0], id: '213', startAt: now + 9 * 60 * 1000 },
+  { ...scheduledMeetings[0], id: '220', startAt: now + 9 * 60 * 1000 },
+  { ...scheduledMeetings[1], id: '214', startAt: now + 4 * 60 * 1000 },
+  { ...scheduledMeetings[1], id: '218', startAt: now + 4 * 60 * 1000 },
+  { ...scheduledMeetings[2], id: '215', startAt: now + 9 * 60 * 1000 },
+  {
+    ...scheduledMeetings[2],
+    id: '217',
+    title: 'SharingOurFeelingsThroughDrawingAndConversation',
+    description: '조금 긴 이야기도 그림과 함께 천천히 나눌 수 있는 시간이에요.',
+    startAt: atKst('20:00:00', 8),
+  },
+  { ...scheduledMeetings[1], id: '221', startAt: now - 3 * 60 * 1000 },
+  { ...scheduledMeetings[1], id: '222', startAt: now - 60 * 1000 },
 ]
 
 const pastMeetings: PastMeeting[] = [
@@ -208,14 +240,41 @@ const pastMeetings: PastMeeting[] = [
   },
 ]
 
-export const getMockMeetingFixture = (meetingId: string | undefined) =>
-  meetings.find(({ id }) => id === meetingId) ??
-  (import.meta.env.DEV
-    ? [...meetingStates, ...extraMeetings].find(({ id }) => id === meetingId)
-    : undefined)
+const applyReservation = (
+  meeting: Meeting,
+  reservations: Record<string, MockMeetingReservation> = {},
+): Meeting => {
+  const reservation = reservations[meeting.id]
+  if (meeting.kind !== 'scheduled') return meeting
+  if (!reservation) return { ...meeting, woolPaid: false }
+  return {
+    ...meeting,
+    startAt: reservation.startAt,
+    membership: reservation.joined ? (reservation.isHost ? 'host' : 'participant') : undefined,
+    participants: Math.max(0, meeting.participants + reservation.participantDelta),
+    status: reservation.cancelled ? 'cancelled' : meeting.status,
+    woolPaid: reservation.joined && reservation.woolChange < 0,
+  }
+}
 
-export const getMockMeeting = (meetingId: string | undefined) => {
-  const meeting = getMockMeetingFixture(meetingId)
+export const getMockMeetingFixture = (
+  meetingId: string | undefined,
+  reservations?: Record<string, MockMeetingReservation>,
+) => {
+  const meeting =
+    meetings.find(({ id }) => id === meetingId) ??
+    (import.meta.env.DEV
+      ? [...meetingStates, ...extraMeetings].find(({ id }) => id === meetingId)
+      : undefined)
+  if (!meeting || meeting.kind === 'live') return meeting
+  return applyReservation(meeting, reservations ?? readReflections().meetingReservations)
+}
+
+export const getMockMeeting = (
+  meetingId: string | undefined,
+  reservations?: Record<string, MockMeetingReservation>,
+) => {
+  const meeting = getMockMeetingFixture(meetingId, reservations)
   return meeting && applyWaitingRoomStatus(meeting, Date.now())
 }
 
@@ -241,10 +300,22 @@ export const loadMeetings = async ({
 }): Promise<MeetingListData> => {
   await new Promise<void>((resolve) => window.setTimeout(resolve, delay))
   if (fail) throw new Error('Mock meeting list unavailable')
-  if (empty) return { meetings: [], pastMeetings: [] }
+  if (empty) return { meetings: [], myMeetings: [], pastMeetings: [] }
   const endAt = Date.now() - pastConversationDuration + 5000
+  const reservations = readReflections().meetingReservations ?? {}
+  const selected = states ? meetingStates : many ? [...meetings, ...extraMeetings] : meetings
+  const visibleMeetings = selected.map((meeting) => applyReservation(meeting, reservations))
+  const visibleIds = new Set(visibleMeetings.map(({ id }) => id))
+  const otherReservations = Object.entries(reservations).flatMap(([id, reservation]) => {
+    if (!reservation.joined || visibleIds.has(id)) return []
+    const meeting = getMockMeeting(id, reservations)
+    return meeting?.kind === 'scheduled' ? [meeting] : []
+  })
   return {
-    meetings: states ? meetingStates : many ? [...meetings, ...extraMeetings] : meetings,
+    meetings: visibleMeetings,
+    myMeetings: [...visibleMeetings, ...otherReservations].filter(
+      ({ membership, status }) => membership && status !== 'cancelled',
+    ),
     pastMeetings: expiringPast
       ? [{ ...pastMeetings[0], startAt: endAt - 60 * 60 * 1000, endAt }]
       : pastMeetings,
