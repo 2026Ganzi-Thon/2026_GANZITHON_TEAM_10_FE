@@ -68,9 +68,11 @@ const MeetingSummary = ({ meeting, now }: { meeting: ScheduledMeeting; now: numb
 export const MeetingReservation = ({
   meetingId,
   storageScope,
+  onRetry,
 }: {
   meetingId: string
   storageScope: string | null
+  onRetry: () => void
 }) => {
   const navigate = useNavigate()
   const { key, search, state } = useLocation()
@@ -233,7 +235,10 @@ export const MeetingReservation = ({
     navigate({ pathname: '/meetings', search: listSearch.toString() })
   }
 
-  const retryLoad = () => setAttempt((value) => value + 1)
+  const retryLoad = () => {
+    onRetry()
+    setAttempt((value) => value + 1)
+  }
 
   const apply = async () => {
     if (busyRef.current || storageScope !== getMockStorageScope()) return
