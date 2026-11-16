@@ -126,12 +126,27 @@ const WaitingRoomScreen = ({
     const onStorage = (event: StorageEvent) => {
       if (isMeetingStorageEvent(event)) refresh()
     }
+    const suspend = () => {
+      setVisibleSince(null)
+      request.current?.abort()
+    }
+    const restore = (event: PageTransitionEvent) => {
+      if (!event.persisted) return
+      request.current?.abort()
+      request.current = null
+      setPending(null)
+      refreshVisibility()
+    }
     const timer = window.setInterval(refresh, 1000)
     window.addEventListener('storage', onStorage)
+    window.addEventListener('pagehide', suspend)
+    window.addEventListener('pageshow', restore)
     document.addEventListener('visibilitychange', refreshVisibility)
     return () => {
       window.clearInterval(timer)
       window.removeEventListener('storage', onStorage)
+      window.removeEventListener('pagehide', suspend)
+      window.removeEventListener('pageshow', restore)
       document.removeEventListener('visibilitychange', refreshVisibility)
       request.current?.abort()
       request.current = null
@@ -491,7 +506,7 @@ const WaitingRoomScreen = ({
             <li>
               {live
                 ? '모임에 참여할 때 양털 1개가 사용돼요.'
-                : '시작 10분 전까지 신청을 취소하면 양털을 돌려드려요.'}
+                : '사용한 양털은 시작 10분 전까지 신청을 취소하면 돌려드려요.'}
             </li>
             <li>종이나 앱 중 편한 방법을 선택해 자유롭게 그림을 그려요.</li>
             <li>그림을 잘 그리지 않아도 괜찮아요. 편안하게 마음을 표현해 주세요.</li>
