@@ -1,7 +1,9 @@
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { HomeLayout } from '@/components'
 import { getMockMeeting } from './meetingMock'
-import { getMeetingEntry, getMeetingPath } from './meetingEntry'
+import type { Meeting } from './meetingMock'
+import { getMeetingEntry, getMeetingListPath, getMeetingPath } from './meetingEntry'
+import type { MeetingNotice } from './meetingEntry'
 import styles from './MeetingList.module.css'
 
 type MeetingScreen = 'detail' | 'waiting' | 'chat'
@@ -17,17 +19,27 @@ export const MeetingHandoff = ({ screen = 'detail' }: { screen?: MeetingScreen }
   const { state } = useLocation()
   const navigate = useNavigate()
   const fromList = state?.fromMeetingList === true
-  const meeting = getMockMeeting(meetingId)
+  const listPath = getMeetingListPath(state?.meetingListSearch)
+  const listState = (meetingNotice: MeetingNotice) => ({
+    meetingNotice,
+    meetingListKey: state?.meetingListKey,
+  })
+  let meeting: Meeting | undefined
+  try {
+    meeting = getMockMeeting(meetingId)
+  } catch {
+    return <Navigate to={listPath} replace state={listState('unavailable')} />
+  }
   const wrongKind =
     (screen === 'waiting' && meeting?.kind !== 'live') ||
     (screen === 'detail' && meeting?.kind !== 'scheduled')
   if (!meeting || wrongKind) {
-    return <Navigate to="/meetings" replace state={{ meetingNotice: 'missing' }} />
+    return <Navigate to={listPath} replace state={listState('missing')} />
   }
 
   const entry = getMeetingEntry(meeting)
   if (entry.canEnter === false) {
-    return <Navigate to="/meetings" replace state={{ meetingNotice: entry.notice }} />
+    return <Navigate to={listPath} replace state={listState(entry.notice)} />
   }
 
   if ((screen === 'chat') !== (meeting.status === 'in-progress')) {

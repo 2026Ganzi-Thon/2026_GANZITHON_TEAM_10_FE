@@ -1,6 +1,10 @@
 import type { Meeting } from './meetingMock'
 
 export const meetingNotices = {
+  unavailable: {
+    title: '모임 정보를 불러오지 못했어요',
+    message: '모임 목록에서 다시 확인해 주세요.',
+  },
   full: { title: '정원이 찬 모임이에요', message: '다른 모임을 찾아볼까요?' },
   started: {
     title: '이미 시작한 모임이에요',
@@ -14,6 +18,9 @@ export const meetingNotices = {
 }
 
 export type MeetingNotice = keyof typeof meetingNotices
+
+export const getMeetingListPath = (search: unknown) =>
+  typeof search === 'string' && search.startsWith('?') ? `/meetings${search}` : '/meetings'
 
 type MeetingEntry =
   { canEnter: true; label: string } | { canEnter: false; label: string; notice: MeetingNotice }

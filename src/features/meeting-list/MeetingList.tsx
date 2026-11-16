@@ -8,6 +8,7 @@ import {
   useSearchParams,
 } from 'react-router-dom'
 import { Button, Modal } from '@/components'
+import { applyWaitingRoomStatuses } from '@/features/meeting-waiting-room/waitingRoomMock'
 import arrowIcon from '@/assets/meetings/arrow.svg'
 import attendeesIcon from '@/assets/meetings/attendees.svg'
 import attendeesSmallIcon from '@/assets/meetings/attendees-small.svg'
@@ -19,7 +20,12 @@ import pastChevron from '@/assets/meetings/past-chevron.svg'
 import plusIcon from '@/assets/meetings/plus.svg'
 import reenterIcon from '@/assets/meetings/reenter.svg'
 import scheduledTimeIcon from '@/assets/meetings/scheduled-time.svg'
-import { loadMeetings, meetingConcerns, pastConversationDuration } from './meetingMock'
+import {
+  isMeetingStorageEvent,
+  loadMeetings,
+  meetingConcerns,
+  pastConversationDuration,
+} from './meetingMock'
 import { getMeetingEntry, getMeetingPath, meetingNotices } from './meetingEntry'
 import type { MeetingNotice } from './meetingEntry'
 import type {
@@ -36,6 +42,9 @@ const tabs = [
   { id: 'mine', label: '나의 모임' },
   { id: 'find', label: '모임 찾기' },
 ] as const
+
+const loadMeetingList = (options: Parameters<typeof loadMeetings>[0]) =>
+  loadMeetings(options).then(applyWaitingRoomStatuses)
 
 const returnPositionKey = 'moyang:meeting-list-return'
 const visibleMeetingCount = 3
@@ -93,18 +102,21 @@ const pastDateFormat = new Intl.DateTimeFormat('ko-KR', {
 const getConcernLabel = (concern: MeetingConcern) =>
   meetingConcerns.find(({ id }) => id === concern)?.label
 
-const ReentryLink = ({ meeting, label }: { meeting: Meeting; label: string }) => (
-  <Link
-    to={getMeetingPath(meeting)}
-    state={{ fromMeetingList: true }}
-    aria-label={`${meeting.title} ${label}`}
-    data-meeting-id={meeting.id}
-    className={styles.reentry}
-  >
-    <img src={reenterIcon} alt="" />
-    {label}
-  </Link>
-)
+const ReentryLink = ({ meeting, label }: { meeting: Meeting; label: string }) => {
+  const { key, search } = useLocation()
+  return (
+    <Link
+      to={getMeetingPath(meeting)}
+      state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
+      aria-label={`${meeting.title} ${label}`}
+      data-meeting-id={meeting.id}
+      className={styles.reentry}
+    >
+      <img src={reenterIcon} alt="" />
+      {label}
+    </Link>
+  )
+}
 
 const ScheduledMeetingCard = ({
   meeting,
@@ -113,6 +125,7 @@ const ScheduledMeetingCard = ({
   meeting: ScheduledMeeting
   onNotice: ShowNotice
 }) => {
+  const { key, search } = useLocation()
   const entry = getMeetingEntry(meeting)
   const canReenter = meeting.status === 'in-progress' && entry.canEnter
 
@@ -151,7 +164,7 @@ const ScheduledMeetingCard = ({
       {entry.canEnter && !canReenter && (
         <Link
           to={getMeetingPath(meeting)}
-          state={{ fromMeetingList: true }}
+          state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
           aria-label={`${meeting.title} 상세 보기`}
           data-meeting-id={meeting.id}
           className={styles.scheduledAction}
@@ -171,6 +184,7 @@ const ScheduledMeetingCard = ({
 }
 
 const LiveMeetingCard = ({ meeting, onNotice }: { meeting: LiveMeeting; onNotice: ShowNotice }) => {
+  const { key, search } = useLocation()
   const entry = getMeetingEntry(meeting)
   const canReenter = meeting.status === 'in-progress' && entry.canEnter
 
@@ -189,7 +203,7 @@ const LiveMeetingCard = ({ meeting, onNotice }: { meeting: LiveMeeting; onNotice
         {entry.canEnter === true && !canReenter && (
           <Link
             to={getMeetingPath(meeting)}
-            state={{ fromMeetingList: true }}
+            state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
             aria-label={`${meeting.title} ${entry.label}`}
             data-meeting-id={meeting.id}
             className={styles.enter}
@@ -399,7 +413,9 @@ export const MeetingList = () => {
   const pageRef = useRef<HTMLDivElement>(null)
   const filtersRef = useRef<HTMLDivElement>(null)
   const returnMeetingRef = useRef<string | undefined>(undefined)
+  const noticePositionRef = useRef<ReturnPosition | undefined>(undefined)
   const { key, search, state } = useLocation()
+  const originKey = typeof state?.meetingListKey === 'string' ? state.meetingListKey : undefined
   const navigate = useNavigate()
   const navigationType = useNavigationType()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -416,7 +432,10 @@ export const MeetingList = () => {
       kind === 'live' && membership === 'participant' && hasEntered,
   )
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>(() => {
-    const position = navigationType === 'POP' ? readReturnPosition(key, search) : undefined
+    const position =
+      navigationType === 'POP' || originKey
+        ? readReturnPosition(originKey ?? key, search)
+        : undefined
     return { past: position?.pastExpanded, ...position?.expandedSections }
   })
   const [activeNotice, setActiveNotice] = useState<MeetingNotice | null>(null)
@@ -428,6 +447,9 @@ export const MeetingList = () => {
       : undefined
 
   const closeNotice = () => {
+    if (routeNotice && originKey) {
+      noticePositionRef.current = readReturnPosition(originKey, search)
+    }
     setActiveNotice(null)
     if (routeNotice) navigate({ search }, { replace: true, state: null })
   }
@@ -439,7 +461,12 @@ export const MeetingList = () => {
   useEffect(() => {
     let active = true
 
-    loadMeetings({
+    const refresh = (event: StorageEvent) => {
+      if (isMeetingStorageEvent(event)) setAttempt((value) => value + 1)
+    }
+    window.addEventListener('storage', refresh)
+
+    loadMeetingList({
       empty: scenario === 'empty',
       fail: scenario === 'error',
       states: scenario === 'meeting-states',
@@ -457,22 +484,37 @@ export const MeetingList = () => {
 
     return () => {
       active = false
+      window.removeEventListener('storage', refresh)
     }
   }, [scenario, attempt])
 
   useLayoutEffect(() => {
-    if (!list || list === 'error' || navigationType !== 'POP') return
-    const position = readReturnPosition(key, search)
+    if (!list || list === 'error') return
+    if (navigationType !== 'POP' && !originKey && !noticePositionRef.current) return
+    const position = noticePositionRef.current ?? readReturnPosition(originKey ?? key, search)
     if (!position) return
     const scroller = pageRef.current?.parentElement
+    if (scroller) scroller.scrollTop = position.scrollTop
+  }, [key, list, navigationType, search, notice, originKey])
+
+  useEffect(() => {
+    if (notice || !list || list === 'error') return
+    if (navigationType !== 'POP' && !originKey && !noticePositionRef.current) return
+    const position = noticePositionRef.current ?? readReturnPosition(originKey ?? key, search)
+    if (!position) return
     const link = position.meetingId
       ? pageRef.current?.querySelector<HTMLAnchorElement>(
           `a[data-meeting-id="${CSS.escape(position.meetingId)}"]`,
         )
       : undefined
-    if (scroller) scroller.scrollTop = position.scrollTop
-    link?.focus({ preventScroll: true })
-  }, [key, list, navigationType, search])
+    const target =
+      link ??
+      (position.meetingId
+        ? pageRef.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')
+        : undefined)
+    target?.focus({ preventScroll: true })
+    noticePositionRef.current = undefined
+  }, [key, list, navigationType, search, notice, originKey])
 
   useLayoutEffect(() => {
     if (!list || list === 'error') return

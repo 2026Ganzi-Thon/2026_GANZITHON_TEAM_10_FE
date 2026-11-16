@@ -1,3 +1,8 @@
+import {
+  applyWaitingRoomStatus,
+  isWaitingRoomStorageEvent,
+} from '@/features/meeting-waiting-room/waitingRoomMock'
+
 export const meetingConcerns = [
   { id: 'STUDY_CAREER', label: '학업·진로·일' },
   { id: 'LOVE', label: '연애·이별' },
@@ -21,6 +26,7 @@ type MeetingInfo = {
   status: 'waiting' | 'in-progress' | 'cancelled'
   membership?: 'host' | 'participant'
   hasEntered?: boolean
+  woolPaid?: boolean
 }
 
 export type LiveMeeting = MeetingInfo & { kind: 'live' }
@@ -202,11 +208,21 @@ const pastMeetings: PastMeeting[] = [
   },
 ]
 
-export const getMockMeeting = (meetingId: string | undefined) =>
+export const getMockMeetingFixture = (meetingId: string | undefined) =>
   meetings.find(({ id }) => id === meetingId) ??
   (import.meta.env.DEV
     ? [...meetingStates, ...extraMeetings].find(({ id }) => id === meetingId)
     : undefined)
+
+export const getMockMeeting = (meetingId: string | undefined) => {
+  const meeting = getMockMeetingFixture(meetingId)
+  return meeting && applyWaitingRoomStatus(meeting, Date.now())
+}
+
+export const isMeetingStorageEvent = ({ key }: StorageEvent) =>
+  isWaitingRoomStorageEvent(key) ||
+  key === 'moyang.accessToken' ||
+  Boolean(key?.includes('mock-reflection-records'))
 
 export const loadMeetings = async ({
   empty,
