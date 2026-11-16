@@ -83,7 +83,9 @@ export const loadReservation = async (
 }
 
 export const canRefundReservation = (meeting: ScheduledMeeting, now = Date.now()) =>
-  meeting.status === 'waiting' && meeting.startAt - now >= refundDeadline
+  meeting.status === 'waiting' &&
+  meeting.startAt - now >= refundDeadline &&
+  (!meeting.membership || meeting.woolPaid === true)
 
 export const canEnterWaitingRoom = (meeting: ScheduledMeeting, now = Date.now()) =>
   Boolean(meeting.membership) &&
@@ -132,7 +134,12 @@ export const applyForMeeting = async (
         woolChange: current.woolChange - 1,
       },
       result: {
-        meeting: { ...meeting, membership: 'participant', participants: meeting.participants + 1 },
+        meeting: {
+          ...meeting,
+          membership: 'participant',
+          participants: meeting.participants + 1,
+          woolPaid: true,
+        },
         applied: true,
       },
     }
@@ -161,7 +168,7 @@ export const cancelReservation = async (
       throw new Error('모임 시작 상태를 확인한 뒤 다시 시도해 주세요.')
     }
     const current = reservations[id] ?? getReservation(meeting)
-    const refunded = canRefundReservation(meeting, now)
+    const refunded = canRefundReservation(meeting, now) && current.woolChange < 0
     const cancelled = meeting.membership === 'host'
     return {
       reservation: {

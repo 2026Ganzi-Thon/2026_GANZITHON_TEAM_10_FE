@@ -562,10 +562,12 @@ export const MeetingReservation = ({
         ]}
       >
         <div className={styles.cancelContent}>
-          {meeting?.membership === 'host' && <p>예약 중인 참여자에게 양털 1개를 돌려드려요.</p>}
+          {meeting?.membership === 'host' && <p>예약 중인 참여자에게 사용한 양털을 돌려드려요.</p>}
           <p>
             {statusPending ? (
               '모임 시작 상태를 확인한 뒤 취소할 수 있어요.'
+            ) : meeting?.woolPaid === false ? (
+              '사용한 양털이 없어 반환되는 양털은 없어요.'
             ) : refundable ? (
               meeting?.membership === 'host' ? (
                 '시작 10분 전까지는 생성비 양털 1개도 돌려드려요.'

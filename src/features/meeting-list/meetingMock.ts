@@ -30,6 +30,7 @@ export type LiveMeeting = MeetingInfo & { kind: 'live' }
 export type ScheduledMeeting = MeetingInfo & {
   kind: 'scheduled'
   startAt: number
+  woolPaid?: boolean
 }
 export type Meeting = LiveMeeting | ScheduledMeeting
 export type PastMeeting = Pick<MeetingInfo, 'id' | 'title' | 'concern'> & {
@@ -240,13 +241,15 @@ const applyReservation = (
   reservations: Record<string, MockMeetingReservation> = {},
 ): Meeting => {
   const reservation = reservations[meeting.id]
-  if (meeting.kind !== 'scheduled' || !reservation) return meeting
+  if (meeting.kind !== 'scheduled') return meeting
+  if (!reservation) return { ...meeting, woolPaid: false }
   return {
     ...meeting,
     startAt: reservation.startAt,
     membership: reservation.joined ? (reservation.isHost ? 'host' : 'participant') : undefined,
     participants: Math.max(0, meeting.participants + reservation.participantDelta),
     status: reservation.cancelled ? 'cancelled' : meeting.status,
+    woolPaid: reservation.joined && reservation.woolChange < 0,
   }
 }
 

@@ -146,6 +146,25 @@ async function code(promise, expected) {
   await assert.rejects(promise, (error) => error.code === expected)
 }
 
+function seedPaidBooking(e, id) {
+  const store = e.reflections.readReflections()
+  const meeting = e.meetings.getMockMeeting(id)
+  e.reflections.writeReflections({
+    ...store,
+    meetingReservations: {
+      ...store.meetingReservations,
+      [id]: {
+        joined: true,
+        isHost: meeting.membership === 'host',
+        cancelled: false,
+        participantDelta: 0,
+        woolChange: -1,
+        startAt: meeting.startAt,
+      },
+    },
+  })
+}
+
 test('insufficient wool and rejected requests leave storage unchanged', async () => {
   const e = environment()
   e.seed(0)
@@ -179,6 +198,67 @@ test('50 duplicate applications charge once and 50 cancellations refund once', a
   assert.equal(e.reflections.getWoolBalance(), 3)
   assert.equal(e.meetings.getMockMeeting('211').participants, 2)
 })
+
+test('default bookings without a payment cannot increase the wool balance on cancellation', async () => {
+  for (const id of ['201', '202']) {
+    const e = environment()
+    e.seed(0)
+    assert.equal(e.reflections.getWoolBalance(), 0)
+    const result = await e.reservation.cancelReservation(id, signal())
+    assert.equal(result.refunded, false)
+    assert.equal(e.reflections.getWoolBalance(), 0)
+  }
+})
+
+test('concurrent cancellation of an unpaid default booking never creates a refund', async () => {
+  const e = environment()
+  e.seed(2)
+  const results = await Promise.all(
+    Array.from({ length: 20 }, () => e.reservation.cancelReservation('202', signal())),
+  )
+  assert.equal(results.filter(({ refunded }) => refunded).length, 0)
+  assert.equal(e.reflections.getWoolBalance(), 2)
+})
+
+test('reapplying after canceling an unpaid default booking charges and refunds only the new payment', async () => {
+  const e = environment()
+  e.seed(2)
+  await e.reservation.cancelReservation('202', signal())
+  assert.equal(e.reflections.getWoolBalance(), 2)
+  await e.reservation.applyForMeeting('202', signal())
+  assert.equal(e.reflections.getWoolBalance(), 1)
+  assert.equal((await e.reservation.cancelReservation('202', signal())).refunded, true)
+  assert.equal(e.reflections.getWoolBalance(), 2)
+  await e.reservation.cancelReservation('202', signal())
+  assert.equal(e.reflections.getWoolBalance(), 2)
+})
+
+test('an old unearned refund is excluded before reapplying without losing reflection data', async () => {
+  const e = environment()
+  e.seed(2)
+  const store = e.reflections.readReflections()
+  const meeting = e.meetings.getMockMeeting('202')
+  e.reflections.writeReflections({
+    ...store,
+    meetingReservations: {
+      202: {
+        joined: false,
+        isHost: false,
+        cancelled: false,
+        participantDelta: -1,
+        woolChange: 1,
+        startAt: meeting.startAt,
+      },
+    },
+  })
+  assert.equal(e.reflections.getWoolBalance(), 2)
+  assert.deepEqual(e.reflections.readReflections().records, store.records)
+  await e.reservation.applyForMeeting('202', signal())
+  assert.equal(e.reflections.getWoolBalance(), 1)
+  await e.reservation.cancelReservation('202', signal())
+  assert.equal(e.reflections.getWoolBalance(), 2)
+  assert.deepEqual(e.reflections.readReflections().records, store.records)
+})
 for (const [offset, refunded] of [
   [600000, true],
   [599999, false],
@@ -207,20 +287,71 @@ test('reapplying after a late cancellation spends a new wool without an extra se
 test('host early cancellation refunds once and closes the meeting', async () => {
   const e = environment()
   e.seed()
+  seedPaidBooking(e, '201')
+  assert.equal(e.reflections.getWoolBalance(), 2)
   const result = await e.reservation.cancelReservation('201', signal())
   assert.equal(result.refunded, true)
   assert.equal(result.cancelled, true)
   assert.equal(e.meetings.getMockMeeting('201').status, 'cancelled')
   await code(e.reservation.cancelReservation('201', signal()), 'cancelled')
-  assert.equal(e.reflections.getWoolBalance(), 4)
+  assert.equal(e.reflections.getWoolBalance(), 3)
 })
 test('host late cancellation closes the meeting with no creation refund', async () => {
   const e = environment()
   e.seed()
+  seedPaidBooking(e, '213')
   const result = await e.reservation.cancelReservation('213', signal())
   assert.equal(result.refunded, false)
   assert.equal(result.cancelled, true)
-  assert.equal(e.reflections.getWoolBalance(), 3)
+  assert.equal(e.reflections.getWoolBalance(), 2)
+})
+
+test('refund guidance distinguishes unpaid fixtures from paid reservations and future applications', async () => {
+  const e = environment()
+  e.seed()
+  assert.equal(e.reservation.canRefundReservation(e.meetings.getMockMeeting('202')), false)
+  assert.equal(e.reservation.canRefundReservation(e.meetings.getMockMeeting('211')), true)
+  seedPaidBooking(e, '202')
+  const paid = e.meetings.getMockMeeting('202')
+  assert.equal(paid.woolPaid, true)
+  assert.equal(e.reservation.canRefundReservation(paid, paid.startAt - 600000), true)
+  assert.equal(e.reservation.canRefundReservation(paid, paid.startAt - 599999), false)
+  const result = await e.reservation.applyForMeeting('211', signal())
+  assert.equal(result.meeting.woolPaid, true)
+  assert.equal(e.reservation.canRefundReservation(result.meeting), true)
+})
+
+test('an existing paid reservation keeps its debit across a reload and refunds only once', async () => {
+  const e = environment()
+  e.seed()
+  seedPaidBooking(e, '202')
+  const next = environment(e.values)
+  assert.equal(next.reflections.getWoolBalance(), 2)
+  assert.equal(next.meetings.getMockMeeting('202').woolPaid, true)
+  const results = await Promise.all([
+    next.reservation.cancelReservation('202', signal()),
+    next.reservation.cancelReservation('202', signal()),
+  ])
+  assert.equal(results.filter(({ refunded }) => refunded).length, 1)
+  assert.equal(next.reflections.getWoolBalance(), 3)
+})
+
+test('refunding the current reservation keeps an earlier nonrefundable payment spent', async () => {
+  const e = environment()
+  e.seed()
+  seedPaidBooking(e, '202')
+  const store = e.reflections.readReflections()
+  e.reflections.writeReflections({
+    ...store,
+    meetingReservations: {
+      ...store.meetingReservations,
+      202: { ...store.meetingReservations['202'], woolChange: -2 },
+    },
+  })
+  assert.equal(e.reflections.getWoolBalance(), 1)
+  assert.equal((await e.reservation.cancelReservation('202', signal())).refunded, true)
+  assert.equal(e.reflections.getWoolBalance(), 2)
+  assert.equal(e.reflections.readReflections().meetingReservations['202'].woolChange, -1)
 })
 test('full and simulated network failures do not charge or join', async () => {
   const e = environment()

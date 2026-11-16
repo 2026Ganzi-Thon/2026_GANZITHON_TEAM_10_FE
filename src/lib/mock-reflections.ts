@@ -71,7 +71,16 @@ const parseReflections = (saved: string): MockReflectionStore => {
   ) {
     throw new Error('저장된 모임 신청 정보를 확인할 수 없어요')
   }
-  return data
+  if (!reservations) return data
+  return {
+    ...data,
+    meetingReservations: Object.fromEntries(
+      Object.entries(reservations).map(([id, reservation]) => [
+        id,
+        { ...reservation, woolChange: Math.min(0, reservation.woolChange) },
+      ]),
+    ),
+  }
 }
 
 const mergeReflections = (
@@ -117,7 +126,7 @@ export const hasSavedReflection = (store: MockReflectionStore, drawingId: number
 export const getWoolBalance = (store = readReflections()) => {
   const earned = store.records.reduce((total, record) => total + (record.sheepReward ?? 0), 0)
   const meetingChange = Object.values(store.meetingReservations ?? {}).reduce(
-    (total, reservation) => total + reservation.woolChange,
+    (total, reservation) => total + Math.min(0, reservation.woolChange),
     0,
   )
   return Math.max(0, earned - (store.paidQuestions?.length ?? 0) + meetingChange)
