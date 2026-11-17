@@ -22,9 +22,11 @@ import {
   canEnterWaitingRoom,
   canRefundReservation,
   isReservationStatusPending,
+  isSameBooking,
   loadReservation,
   getMeetingRecommendations,
   meetingSteps,
+  scheduledStartGrace,
   ReservationChangedError,
   ReservationError,
 } from './reservationMock'
@@ -89,7 +91,7 @@ export const MeetingReservation = ({
   const [actionError, setActionError] = useState('')
   const [notice, setNotice] = useState<MeetingNotice | 'wool' | null>(null)
   const [applied, setApplied] = useState<ScheduledMeeting | null>(null)
-  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [cancellationTarget, setCancellationTarget] = useState<ScheduledMeeting | null>(null)
   const [cancelled, setCancelled] = useState<{
     refunded: boolean
     cancelled: boolean
@@ -104,7 +106,9 @@ export const MeetingReservation = ({
   const primaryActionRef = useRef<HTMLButtonElement>(null)
   const appliedWasOpenRef = useRef(false)
   const loadedRef = useRef(false)
+  const refreshedAtBoundary = useRef<number | null>(null)
   const loading = loadedAttempt !== attempt
+  const confirmCancel = cancellationTarget !== null
 
   useLayoutEffect(() => {
     const scroller = pageRef.current?.parentElement
@@ -160,8 +164,12 @@ export const MeetingReservation = ({
         setMeeting(data)
         setLoadedAttempt(attempt)
         setLoadError(false)
-        setApplied((current) => (current && data.membership ? data : null))
-        setConfirmCancel((current) => current && Boolean(data.membership))
+        setApplied((current) =>
+          current && data.membership && isSameBooking(current, data) ? data : null,
+        )
+        setCancellationTarget((current) =>
+          current && data.membership && isSameBooking(current, data) ? current : null,
+        )
         setCancelled((current) => (data.membership ? null : current))
       },
       (error: unknown) => {
@@ -217,6 +225,14 @@ export const MeetingReservation = ({
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (!meeting || meeting.status !== 'waiting' || loading || loadError) return
+    const boundary = meeting.startAt + (meeting.membership ? scheduledStartGrace : 0)
+    if (now < boundary || refreshedAtBoundary.current === boundary) return
+    refreshedAtBoundary.current = boundary
+    setAttempt((value) => value + 1)
+  }, [meeting, now, loading, loadError])
 
   const returnToList = () => {
     actionControllerRef.current?.abort()
@@ -277,7 +293,7 @@ export const MeetingReservation = ({
   }
 
   const cancel = async () => {
-    if (busyRef.current || storageScope !== getMockStorageScope()) return
+    if (!cancellationTarget || busyRef.current || storageScope !== getMockStorageScope()) return
     const controller = new AbortController()
     actionControllerRef.current = controller
     busyRef.current = true
@@ -289,17 +305,22 @@ export const MeetingReservation = ({
       const result = await cancelReservation(meetingId, controller.signal, {
         fail,
         delay: scenario === 'cancel-loading' ? 3000 : undefined,
+        expectedBooking: cancellationTarget,
       })
       if (!controller.signal.aborted && storageScope === getMockStorageScope()) {
-        setConfirmCancel(false)
+        setCancellationTarget(null)
         setLoadError(false)
         setCancelled(result)
         if (!result.cancelled) retryLoad()
       }
     } catch (error) {
       if (controller.signal.aborted) return
-      if (error instanceof ReservationError) {
-        setConfirmCancel(false)
+      if (error instanceof ReservationChangedError) {
+        setCancellationTarget(null)
+        setActionError(error.message)
+        retryLoad()
+      } else if (error instanceof ReservationError) {
+        setCancellationTarget(null)
         setNotice(error.code)
       } else {
         setNow(Date.now())
@@ -471,7 +492,7 @@ export const MeetingReservation = ({
                   disabled={Boolean(statusPending) || loading || loadError || pending !== null}
                   onClick={() => {
                     setActionError('')
-                    setConfirmCancel(true)
+                    setCancellationTarget(meeting)
                   }}
                 >
                   모임 취소하기
@@ -552,7 +573,7 @@ export const MeetingReservation = ({
       <Modal
         isOpen={confirmCancel}
         onClose={() => {
-          if (!busyRef.current) setConfirmCancel(false)
+          if (!busyRef.current) setCancellationTarget(null)
         }}
         title={
           meeting?.membership === 'host' ? '모임을 취소하시겠어요?' : '모임 신청을 취소하시겠어요?'
@@ -567,7 +588,7 @@ export const MeetingReservation = ({
           {
             label: '모임 유지하기',
             disabled: pending !== null,
-            onClick: () => setConfirmCancel(false),
+            onClick: () => setCancellationTarget(null),
           },
         ]}
       >

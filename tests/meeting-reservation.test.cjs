@@ -612,6 +612,24 @@ test('a default participant can cancel and book a later date without reloading t
   assert.equal(e.reflections.getWoolBalance(), 2)
 })
 
+test('an unbooked mock meeting renews on the open list without changing stored bookings', async () => {
+  const e = environment()
+  e.seed()
+  const original = e.meetings.getMockMeeting('211')
+  const booked = e.meetings.getMockMeeting('202')
+  const data = e.values.get(e.reflections.getReflectionStorageKey())
+  e.time(original.startAt)
+  const { meetings } = await e.meetings.loadMeetings({ empty: false, fail: false })
+  const renewed = meetings.find(({ id }) => id === original.id)
+  assert.ok(renewed.startAt > original.startAt)
+  assert.equal(e.meetings.getMockMeeting(original.id).startAt, renewed.startAt)
+  assert.equal(renewed.membership, undefined)
+  assert.equal(e.meetings.getMockMeeting(booked.id).startAt, booked.startAt)
+  assert.equal(e.values.get(e.reflections.getReflectionStorageKey()), data)
+  e.time(renewed.startAt)
+  assert.ok(e.meetings.getMockMeeting(original.id).startAt > renewed.startAt)
+})
+
 test('bookings from other preview lists are still visible in My meetings after reload', async () => {
   const e = environment()
   e.seed()
@@ -660,11 +678,11 @@ test('entry is limited to members, exactly five minutes before through two minut
     false,
   )
 })
-test('new applications close at the exact start, while existing membership is idempotent', async () => {
+test('fixed meeting applications close at the exact start, while existing membership is idempotent', async () => {
   const e = environment()
   e.seed()
-  e.time(e.meetings.getMockMeeting('211').startAt)
-  await code(e.reservation.applyForMeeting('211', signal()), 'started')
+  e.time(e.meetings.getMockMeeting('203').startAt)
+  await code(e.reservation.applyForMeeting('203', signal()), 'started')
   const original = JSON.stringify([...e.values])
   await e.reservation.applyForMeeting('202', signal())
   assert.equal(JSON.stringify([...e.values]), original)
@@ -679,6 +697,23 @@ test('an elapsed waiting-room window does not change membership or wool while st
   await assert.rejects(e.reservation.cancelReservation('202', signal()), /시작 상태/)
   assert.equal(JSON.stringify([...e.values]), original)
 })
+
+test('an older cancellation cannot cancel a replacement booking for the same start', async () => {
+  const e = environment()
+  e.seed()
+  const first = await e.reservation.applyForMeeting('211', signal())
+  await e.reservation.cancelReservation('211', signal())
+  const second = await e.reservation.applyForMeeting('211', signal())
+  assert.equal(first.meeting.startAt, second.meeting.startAt)
+  assert.notEqual(first.meeting.bookingId, second.meeting.bookingId)
+  await assert.rejects(
+    e.reservation.cancelReservation('211', signal(), { expectedBooking: first.meeting }),
+    /예약이 변경/,
+  )
+  assert.equal(e.meetings.getMockMeeting('211').bookingId, second.meeting.bookingId)
+  assert.equal(e.reflections.getWoolBalance(), 2)
+})
+
 test('malformed reservation data is not reset or overwritten', async () => {
   const e = environment()
   e.seed()

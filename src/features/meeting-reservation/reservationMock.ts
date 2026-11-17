@@ -137,9 +137,11 @@ export const applyForMeeting = async (
     if (full || meeting.participants >= meeting.capacity) throw new ReservationError('full')
     if (getWoolBalance(store) < 1) throw new ReservationError('wool')
     const current = reservations[id] ?? getReservation(meeting)
+    const bookingId = crypto.randomUUID()
     return {
       reservation: {
         ...current,
+        bookingId,
         joined: true,
         isHost: false,
         participantDelta: current.participantDelta + 1,
@@ -149,6 +151,7 @@ export const applyForMeeting = async (
       result: {
         meeting: {
           ...meeting,
+          bookingId,
           membership: 'participant',
           participants: meeting.participants + 1,
           woolPaid: true,
@@ -160,11 +163,23 @@ export const applyForMeeting = async (
 }
 
 type CancellationResult = { refunded: boolean; cancelled: boolean; alreadyCancelled: boolean }
+type BookingIdentity = Pick<ScheduledMeeting, 'startAt' | 'bookingId'>
+
+export const isSameBooking = (first: BookingIdentity, second: BookingIdentity) =>
+  first.startAt === second.startAt && first.bookingId === second.bookingId
 
 export const cancelReservation = async (
   id: string,
   signal: AbortSignal,
-  { fail = false, delay = 400 } = {},
+  {
+    fail = false,
+    delay = 400,
+    expectedBooking,
+  }: {
+    fail?: boolean
+    delay?: number
+    expectedBooking?: BookingIdentity
+  } = {},
 ) => {
   const key = getReflectionStorageKey()
   await waitForResponse(signal, delay)
@@ -176,6 +191,10 @@ export const cancelReservation = async (
     if (!meeting.membership) {
       return { result: { refunded: false, cancelled: false, alreadyCancelled: true } }
     }
+    if (expectedBooking && !isSameBooking(meeting, expectedBooking))
+      throw new ReservationChangedError(
+        '예약이 변경됐어요. 현재 예약을 확인한 뒤 다시 시도해 주세요.',
+      )
     const now = Date.now()
     if (isReservationStatusPending(meeting, now)) {
       throw new Error('모임 시작 상태를 확인한 뒤 다시 시도해 주세요.')
