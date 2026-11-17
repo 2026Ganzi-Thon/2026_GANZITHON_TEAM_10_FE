@@ -657,6 +657,28 @@ test('bookings from other preview lists are still visible in My meetings after r
     false,
   )
 })
+
+test('a broken room from another list does not block my other bookings', async () => {
+  const e = environment()
+  e.seed()
+  for (const id of ['208', '215']) await e.reservation.applyForMeeting(id, signal())
+  const scope = e.storage.getMockStorageScope()
+  const badKey = `moyang:meeting-waiting-room:${scope}:208`
+  e.values.set(badKey, '{broken')
+  const data = await e.meetings.loadMeetings({ empty: false, fail: false })
+  const { myMeetings } = e
+    .load('src/features/meeting-waiting-room/waitingRoomMock.ts')
+    .applyWaitingRoomStatuses(data)
+  assert.equal(
+    myMeetings.some(({ id }) => id === '208'),
+    false,
+  )
+  assert.equal(
+    myMeetings.some(({ id }) => id === '215'),
+    true,
+  )
+  assert.equal(e.values.get(badKey), '{broken')
+})
 test('entry is limited to members, exactly five minutes before through two minutes after', async () => {
   const e = environment()
   const booked = e.meetings.getMockMeeting('202')
@@ -688,13 +710,14 @@ test('fixed meeting applications close at the exact start, while existing member
   assert.equal(JSON.stringify([...e.values]), original)
 })
 
-test('an elapsed waiting-room window does not change membership or wool while status is pending', async () => {
+test('an unvisited reservation is cancelled at the deadline without changing the ledger on read', async () => {
   const e = environment()
   e.seed()
-  const meeting = e.meetings.getMockMeeting('202')
+  const { meeting } = await e.reservation.applyForMeeting('211', signal())
   e.time(meeting.startAt + 120000)
   const original = JSON.stringify([...e.values])
-  await assert.rejects(e.reservation.cancelReservation('202', signal()), /시작 상태/)
+  await code(e.reservation.loadReservation('211', signal()), 'cancelled')
+  await code(e.reservation.cancelReservation('211', signal()), 'cancelled')
   assert.equal(JSON.stringify([...e.values]), original)
 })
 

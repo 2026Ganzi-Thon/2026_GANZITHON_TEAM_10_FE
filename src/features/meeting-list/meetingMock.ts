@@ -1,3 +1,7 @@
+import {
+  applyWaitingRoomStatus,
+  isWaitingRoomStorageEvent,
+} from '@/features/meeting-waiting-room/waitingRoomMock'
 import { readReflections } from '@/lib/mock-reflections'
 import type { MockMeetingReservation } from '@/lib/mock-reflections'
 
@@ -279,7 +283,7 @@ const applyReservation = (
   }
 }
 
-export const getMockMeeting = (
+export const getMockMeetingFixture = (
   meetingId: string | undefined,
   reservations?: Record<string, MockMeetingReservation>,
 ) => {
@@ -292,8 +296,18 @@ export const getMockMeeting = (
   return applyReservation(meeting, reservations ?? readReflections().meetingReservations)
 }
 
+export const getMockMeeting = (
+  meetingId: string | undefined,
+  reservations?: Record<string, MockMeetingReservation>,
+) => {
+  const meeting = getMockMeetingFixture(meetingId, reservations)
+  return meeting && applyWaitingRoomStatus(meeting, Date.now())
+}
+
 export const isMeetingStorageEvent = ({ key }: StorageEvent) =>
-  key == null || key === 'moyang.accessToken' || key.includes('mock-reflection-records')
+  isWaitingRoomStorageEvent(key) ||
+  key === 'moyang.accessToken' ||
+  Boolean(key?.includes('mock-reflection-records'))
 
 export const loadMeetings = async ({
   empty,
@@ -320,7 +334,7 @@ export const loadMeetings = async ({
   const visibleIds = new Set(visibleMeetings.map(({ id }) => id))
   const otherReservations = Object.entries(reservations).flatMap(([id, reservation]) => {
     if (!reservation.joined || visibleIds.has(id)) return []
-    const meeting = getMockMeeting(id, reservations)
+    const meeting = getMockMeetingFixture(id, reservations)
     return meeting?.kind === 'scheduled' ? [meeting] : []
   })
   return {

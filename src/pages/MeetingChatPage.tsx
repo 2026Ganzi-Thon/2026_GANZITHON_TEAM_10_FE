@@ -1,3 +1,3 @@
-import { MeetingHandoff } from '@/features/meeting-list/MeetingHandoff'
+import { MeetingWaitingRoom } from '@/features/meeting-waiting-room/MeetingWaitingRoom'
 
-export const MeetingChatPage = () => <MeetingHandoff screen="chat" />
+export const MeetingChatPage = () => <MeetingWaitingRoom view="chat" />
