@@ -1,8 +1,12 @@
 import { HomeLayout } from '@/components'
 import { MeetingList } from '@/features/meeting-list/MeetingList'
+import { useMockStorageScope } from '@/hooks/useMockStorageScope'
 
-export const MeetingsPage = () => (
-  <HomeLayout>
-    <MeetingList />
-  </HomeLayout>
-)
+export const MeetingsPage = () => {
+  const scope = useMockStorageScope()
+  return (
+    <HomeLayout>
+      <MeetingList key={scope} />
+    </HomeLayout>
+  )
+}

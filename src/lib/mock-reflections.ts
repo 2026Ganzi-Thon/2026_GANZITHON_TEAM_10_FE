@@ -26,10 +26,24 @@ export type MockReflectionStore = {
   records: MockRecord[]
   completedDrawingIds: number[]
   paidQuestions?: string[]
+  meetingReservations?: Record<string, MockMeetingReservation>
+}
+
+export type MockMeetingReservation = {
+  bookingId?: string
+  joined: boolean
+  isHost: boolean
+  cancelled: boolean
+  participantDelta: number
+  woolChange: number
+  startAt: number
 }
 
 const recordsKey = 'moyang:mock-reflection-records'
 const previewRecordsKey = `${recordsKey}:wool-preview`
+
+export const getReflectionStorageKey = (preview = false) =>
+  getMockStorageKey(preview ? previewRecordsKey : recordsKey)
 
 const parseReflections = (saved: string): MockReflectionStore => {
   let data: MockReflectionStore | MockRecord[] | null
@@ -64,7 +78,38 @@ const parseReflections = (saved: string): MockReflectionStore => {
   ) {
     throw new MockStorageUnavailableError()
   }
-  return data
+  const reservations = data.meetingReservations
+  if (
+    reservations !== undefined &&
+    (reservations === null ||
+      typeof reservations !== 'object' ||
+      Array.isArray(reservations) ||
+      Object.values(reservations).some(
+        (reservation) =>
+          !reservation ||
+          typeof reservation.joined !== 'boolean' ||
+          typeof reservation.isHost !== 'boolean' ||
+          typeof reservation.cancelled !== 'boolean' ||
+          (reservation.bookingId !== undefined &&
+            (typeof reservation.bookingId !== 'string' || !reservation.bookingId.trim())) ||
+          ![-1, 0, 1].includes(reservation.participantDelta) ||
+          !Number.isSafeInteger(reservation.woolChange) ||
+          typeof reservation.startAt !== 'number' ||
+          !Number.isFinite(new Date(reservation.startAt).getTime()),
+      ))
+  ) {
+    throw new Error('저장된 모임 신청 정보를 확인할 수 없어요')
+  }
+  if (!reservations) return data
+  return {
+    ...data,
+    meetingReservations: Object.fromEntries(
+      Object.entries(reservations).map(([id, reservation]) => [
+        id,
+        { ...reservation, woolChange: Math.min(0, reservation.woolChange) },
+      ]),
+    ),
+  }
 }
 
 const mergeReflections = (
@@ -82,6 +127,7 @@ const mergeReflections = (
     paidQuestions: [
       ...new Set([...(legacy.paidQuestions ?? []), ...(current.paidQuestions ?? [])]),
     ],
+    meetingReservations: { ...legacy.meetingReservations, ...current.meetingReservations },
   }
 }
 
@@ -90,17 +136,17 @@ export const migrateLegacyReflections = (accountSuffix: string) => {
   migrateLegacyMockKey(previewRecordsKey, accountSuffix, parseReflections, mergeReflections)
 }
 
-export const readReflections = (preview = false): MockReflectionStore =>
-  readMockStorage(
-    getMockStorageKey(preview ? previewRecordsKey : recordsKey),
-    parseReflections,
-  ) ?? {
+const readReflectionStore = (key: string): MockReflectionStore =>
+  readMockStorage(key, parseReflections) ?? {
     records: [],
     completedDrawingIds: [],
   }
 
+export const readReflections = (preview = false): MockReflectionStore =>
+  readReflectionStore(getReflectionStorageKey(preview))
+
 export const writeReflections = (store: MockReflectionStore, preview = false) =>
-  writeMockStorage(getMockStorageKey(preview ? previewRecordsKey : recordsKey), store)
+  writeMockStorage(getReflectionStorageKey(preview), store)
 
 export const hasSavedReflection = (store: MockReflectionStore, drawingId: number) =>
   store.completedDrawingIds.includes(drawingId) ||
@@ -108,11 +154,45 @@ export const hasSavedReflection = (store: MockReflectionStore, drawingId: number
 
 export const getWoolBalance = (store = readReflections()) => {
   const earned = store.records.reduce((total, record) => total + (record.sheepReward ?? 0), 0)
-  return Math.max(0, earned - (store.paidQuestions?.length ?? 0))
+  const meetingChange = Object.values(store.meetingReservations ?? {}).reduce(
+    (total, reservation) => total + Math.min(0, reservation.woolChange),
+    0,
+  )
+  return Math.max(0, earned - (store.paidQuestions?.length ?? 0) + meetingChange)
 }
 
 export const withReflectionLock = <T>(signal: AbortSignal, update: () => T) =>
   withMockStorageLock(recordsKey, update, signal)
+
+export const updateMeetingReservation = <T>(
+  key: string,
+  id: string,
+  signal: AbortSignal,
+  update: (store: MockReflectionStore) => { result: T; reservation?: MockMeetingReservation },
+) => {
+  if (!window.navigator.locks)
+    throw new Error('이 브라우저에서는 모임을 안전하게 신청하거나 취소할 수 없어요.')
+
+  return withReflectionLock(signal, () => {
+    if (key !== getReflectionStorageKey()) throw new Error('로그인 정보가 변경됐어요.')
+    const local = localStorage.getItem(key)
+    const session = sessionStorage.getItem(key)
+    if (local !== null && session !== null && local !== session) {
+      throw new Error('저장된 모임 신청 정보를 다시 확인해 주세요.')
+    }
+    const store = readReflectionStore(key)
+    const { result, reservation } = update(store)
+    if (key !== getReflectionStorageKey()) throw new Error('로그인 정보가 변경됐어요.')
+    if (reservation) {
+      if (session !== null && session === local) sessionStorage.removeItem(key)
+      writeMockStorage(key, {
+        ...store,
+        meetingReservations: { ...store.meetingReservations, [id]: reservation },
+      })
+    }
+    return result
+  })
+}
 
 export const spendWoolForQuestion = (questionId: string, signal: AbortSignal, preview = false) =>
   withReflectionLock(signal, () => {
