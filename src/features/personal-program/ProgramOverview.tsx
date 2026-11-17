@@ -178,24 +178,41 @@ export const PersonalProgramHomeSection = ({
           ? `총 ${activePrograms.length}개의 모양을 이어가고 있어요.`
           : '이어가는 모양이 아직 없어요.'}
       </p>
-      {canCollapse && !expanded && nextActivity && (
-        <p className={styles.homeNext}>
-          {nextActivity.name} ·{' '}
-          <time dateTime={nextActivity.date}>{formatActivityDate(nextActivity.date)}</time>
-        </p>
+      {canCollapse && nextActivity && (
+        <div
+          className={`${styles.homeExpandable} ${styles.homeNextWrapper}`}
+          data-expanded={!expanded}
+          inert={expanded}
+        >
+          <div>
+            <p className={styles.homeNext}>
+              {nextActivity.name} ·{' '}
+              <time dateTime={nextActivity.date}>{formatActivityDate(nextActivity.date)}</time>
+            </p>
+          </div>
+        </div>
       )}
       {activePrograms.length > 0 && (
-        <ul id={listId} className={styles.homeList} hidden={canCollapse && !expanded}>
-          {activePrograms.map((program) => (
-            <li key={program.id}>
-              <PersonalProgramHomeCard
-                program={program}
-                today={today}
-                to={getProgramLink?.(program.id)}
-              />
-            </li>
-          ))}
-        </ul>
+        <div
+          id={listId}
+          className={styles.homeExpandable}
+          data-expanded={!canCollapse || expanded}
+          inert={canCollapse && !expanded}
+        >
+          <div>
+            <ul className={styles.homeList}>
+              {activePrograms.map((program) => (
+                <li key={program.id}>
+                  <PersonalProgramHomeCard
+                    program={program}
+                    today={today}
+                    to={getProgramLink?.(program.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       )}
     </section>
   )

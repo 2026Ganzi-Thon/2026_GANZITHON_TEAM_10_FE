@@ -9,7 +9,10 @@ import styles from './DrawingMethod.module.css'
 /** 그림 주제와 그리기 방식을 안내하고 선택한 방식으로 이동한다. */
 export const DrawingMethod = () => {
   const navigate = useNavigate()
-  const { search } = useLocation()
+  const { search, state } = useLocation()
+  const programActivity = (
+    state as { programActivity?: { topic: string; description: string; round: number } } | null
+  )?.programActivity
   const isPreview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
   const { isOpen, openModal, closeModal } = useModal()
   const [method, setMethod] = useState<'paper' | 'canvas' | null>(null)
@@ -22,7 +25,7 @@ export const DrawingMethod = () => {
   const [topicError, setTopicError] = useState(false)
 
   useEffect(() => {
-    if (isPreview) return
+    if (isPreview && !programActivity) return
     let cancelled = false
     apiClient
       .get<{
@@ -33,7 +36,10 @@ export const DrawingMethod = () => {
       }>('/api/topics/recommended')
       .then(({ data }) => {
         if (!cancelled) {
-          if (data.success && data.data.topics.length) setTopic(data.data.topics[0])
+          const selected = programActivity
+            ? data.data?.topics.find((item) => item.title === programActivity.topic)
+            : data.data?.topics[0]
+          if (data.success && selected) setTopic(selected)
           else setTopicError(true)
         }
       })
@@ -43,7 +49,7 @@ export const DrawingMethod = () => {
     return () => {
       cancelled = true
     }
-  }, [isPreview])
+  }, [isPreview, programActivity])
 
   return (
     <div className={styles.page}>
@@ -56,17 +62,23 @@ export const DrawingMethod = () => {
           <p className={styles.guide}>
             알려주신 내용을 바탕으로
             <br />
-            첫 번째 미술 활동을 준비했어요.
+            {programActivity
+              ? `${programActivity.round}회차 미술 활동을 준비했어요.`
+              : '첫 번째 미술 활동을 준비했어요.'}
             <br />잘 그리려 하지 않아도 괜찮아요.
           </p>
         </div>
         <section className={styles.topic}>
           <p className="text-caption-medium">주제 설명</p>
           <h1 className="text-section">
-            {isPreview || topicError
-              ? '내 마음속 방을 그려볼까요?'
-              : (topic?.title ?? '주제를 불러오고 있어요.')}
+            {programActivity?.topic ??
+              (isPreview || topicError
+                ? '내 마음속 방을 그려볼까요?'
+                : (topic?.title ?? '주제를 불러오고 있어요.'))}
           </h1>
+          {programActivity && topicError && (
+            <p role="alert">선택한 주제의 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+          )}
         </section>
         <section className={styles.methods} aria-labelledby="method-heading">
           <p className="text-caption-medium">방식 선택</p>
@@ -114,11 +126,24 @@ export const DrawingMethod = () => {
       </div>
       <div className={styles.actions}>
         <Button
-          disabled={!method || (!isPreview && !topic && !topicError)}
+          disabled={!method || (programActivity ? !topic : !isPreview && !topic && !topicError)}
           onClick={() =>
             navigate(
               `/drawing/onboarding/3?type=${method === 'paper' ? 'paper' : 'canvas'}${isPreview ? '&preview' : ''}`,
-              { state: { topic, fallbackTopic: topicError } },
+              {
+                state: {
+                  ...state,
+                  topic:
+                    programActivity && topic
+                      ? {
+                          ...topic,
+                          title: programActivity.topic,
+                          description: programActivity.description,
+                        }
+                      : topic,
+                  fallbackTopic: topicError,
+                },
+              },
             )
           }
         >
