@@ -1,7 +1,8 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useReducer, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarDays, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
+import { Button } from '@/components'
 import { readPrograms } from './programMock'
 import { formatActivityDate, formatWeekdays, getActivitySchedule, rounds } from './programSchedule'
 import type { FirstReflection, PersonalProgram, ProgramActivity } from './programSchedule'
@@ -134,16 +135,47 @@ export const PersonalProgramHomeCard = ({
 }
 
 export const PersonalProgramHomeSection = ({
-  programs = readPrograms(),
+  programs,
   getProgramLink,
 }: {
   programs?: PersonalProgram[]
   getProgramLink?: (programId: string) => string
 } = {}) => {
   const [expanded, setExpanded] = useState(false)
+  const [, retryStorage] = useReducer((attempt: number) => attempt + 1, 0)
   const [today] = useProgramToday()
   const sectionId = useId()
-  const activePrograms = programs.filter(
+  useEffect(() => {
+    if (programs !== undefined) return
+    window.addEventListener('storage', retryStorage)
+    return () => window.removeEventListener('storage', retryStorage)
+  }, [programs])
+
+  let storedPrograms = programs ?? []
+  let storageUnavailable = false
+  if (programs === undefined) {
+    try {
+      storedPrograms = readPrograms()
+    } catch {
+      storageUnavailable = true
+    }
+  }
+
+  if (storageUnavailable) {
+    return (
+      <section className={styles.homeSection} aria-labelledby={sectionId}>
+        <h2 id={sectionId}>나의 모양 이어가기</h2>
+        <p className={styles.homeSummary} role="alert">
+          저장된 일정을 불러오지 못했어요. 브라우저 설정을 확인한 뒤 다시 시도해 주세요.
+        </p>
+        <Button color="gray" onClick={retryStorage}>
+          다시 시도
+        </Button>
+      </section>
+    )
+  }
+
+  const activePrograms = storedPrograms.filter(
     (program) => !program.cancelled && program.completed < rounds.length,
   )
   const canCollapse = activePrograms.length >= 3
@@ -178,24 +210,41 @@ export const PersonalProgramHomeSection = ({
           ? `총 ${activePrograms.length}개의 모양을 이어가고 있어요.`
           : '이어가는 모양이 아직 없어요.'}
       </p>
-      {canCollapse && !expanded && nextActivity && (
-        <p className={styles.homeNext}>
-          {nextActivity.name} ·{' '}
-          <time dateTime={nextActivity.date}>{formatActivityDate(nextActivity.date)}</time>
-        </p>
+      {canCollapse && nextActivity && (
+        <div
+          className={`${styles.homeExpandable} ${styles.homeNextWrapper}`}
+          data-expanded={!expanded}
+          inert={expanded}
+        >
+          <div>
+            <p className={styles.homeNext}>
+              {nextActivity.name} ·{' '}
+              <time dateTime={nextActivity.date}>{formatActivityDate(nextActivity.date)}</time>
+            </p>
+          </div>
+        </div>
       )}
       {activePrograms.length > 0 && (
-        <ul id={listId} className={styles.homeList} hidden={canCollapse && !expanded}>
-          {activePrograms.map((program) => (
-            <li key={program.id}>
-              <PersonalProgramHomeCard
-                program={program}
-                today={today}
-                to={getProgramLink?.(program.id)}
-              />
-            </li>
-          ))}
-        </ul>
+        <div
+          id={listId}
+          className={styles.homeExpandable}
+          data-expanded={!canCollapse || expanded}
+          inert={canCollapse && !expanded}
+        >
+          <div>
+            <ul className={styles.homeList}>
+              {activePrograms.map((program) => (
+                <li key={program.id}>
+                  <PersonalProgramHomeCard
+                    program={program}
+                    today={today}
+                    to={getProgramLink?.(program.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       )}
     </section>
   )

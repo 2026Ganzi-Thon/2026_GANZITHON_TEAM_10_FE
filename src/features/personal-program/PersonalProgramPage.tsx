@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faCircleInfo } from '@fortawesome/free-solid-svg-icons'
@@ -6,6 +6,7 @@ import { Button, HomeLayout, Modal, SheepProfile } from '@/components'
 import { exampleDrawing } from '@/features/drawing-conversation/conversationMock'
 import { useModal } from '@/hooks/useModal'
 import { useMockStorageScope } from '@/hooks/useMockStorageScope'
+import { getMockStorageScope } from '@/lib/mock-storage'
 import {
   PersonalProgramHomeSection,
   ProgramProgress,
@@ -28,7 +29,7 @@ import {
   getToday,
   rounds,
 } from './programSchedule'
-import type { FirstReflection } from './programSchedule'
+import type { FirstReflection, PersonalProgram } from './programSchedule'
 import { useProgramToday } from './useProgramToday'
 import styles from './PersonalProgram.module.css'
 
@@ -57,7 +58,14 @@ export const PersonalProgramPage = () => {
     )
   const scenario = mockScenario ?? (isPreview ? 'setup' : undefined)
   const reflection = state?.firstReflection ?? (isPreview ? exampleReflection : undefined)
-  const programs = readPrograms(scenario)
+  const [, retryStorage] = useReducer((attempt: number) => attempt + 1, 0)
+  let programs: PersonalProgram[] = []
+  let storageUnavailable = false
+  try {
+    programs = readPrograms(scenario)
+  } catch {
+    storageUnavailable = true
+  }
   const program = id
     ? programs.find((item) => item.id === id)
     : reflection && getProgramForReflection(programs, reflection)
@@ -65,9 +73,13 @@ export const PersonalProgramPage = () => {
   const [editing, setEditing] = useState(false)
   const { isOpen: showCancel, openModal: openCancel, closeModal: closeCancel } = useModal()
   const [cancelFailed, setCancelFailed] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const cancelRequest = useRef<AbortController | null>(null)
   const failedOnce = useRef(false)
   const editButton = useRef<HTMLButtonElement>(null)
   const wasEditing = useRef(false)
+
+  useEffect(() => () => cancelRequest.current?.abort(), [])
 
   useEffect(() => {
     if (wasEditing.current && !editing) editButton.current?.focus()
@@ -125,14 +137,40 @@ export const PersonalProgramPage = () => {
     })
   }
 
-  const cancelSchedule = () => {
-    if (!program) return
+  const cancelSchedule = async () => {
+    if (!program || cancelRequest.current || storageScope !== getMockStorageScope()) return
+    const controller = new AbortController()
+    cancelRequest.current = controller
+    setCancelling(true)
+    setCancelFailed(false)
     try {
-      cancelProgramSchedule(program.id, scenario)
-      navigate(home, { replace: true })
+      await cancelProgramSchedule(program.id, scenario, controller.signal)
+      if (!controller.signal.aborted && storageScope === getMockStorageScope()) {
+        navigate(home, { replace: true })
+      }
     } catch {
-      setCancelFailed(true)
+      if (!controller.signal.aborted) setCancelFailed(true)
+    } finally {
+      cancelRequest.current = null
+      if (!controller.signal.aborted) setCancelling(false)
     }
+  }
+
+  if (storageUnavailable) {
+    return (
+      <div className={styles.page}>
+        <section className={styles.content}>
+          <h1 className={styles.headline}>일정을 확인하지 못했어요</h1>
+          <p className={styles.error} role="alert">
+            저장된 일정을 불러오지 못했어요. 브라우저 설정을 확인한 뒤 다시 시도해 주세요.
+          </p>
+          <Button onClick={retryStorage}>다시 시도</Button>
+          <Link className={styles.textLink} to={home}>
+            홈으로 돌아가기
+          </Link>
+        </section>
+      </div>
+    )
   }
 
   if (isHomePreview) {
@@ -343,11 +381,17 @@ export const PersonalProgramPage = () => {
       </div>
       <Modal
         isOpen={showCancel}
-        onClose={closeCancel}
+        onClose={() => {
+          if (!cancelRequest.current) closeCancel()
+        }}
         title="활동을 취소하시겠습니까?"
         actions={[
-          { label: '활동 취소', onClick: cancelSchedule },
-          { label: '돌아가기', color: 'gray', onClick: closeCancel },
+          {
+            label: cancelling ? '취소 중…' : '활동 취소',
+            onClick: cancelSchedule,
+            disabled: cancelling,
+          },
+          { label: '돌아가기', color: 'gray', onClick: closeCancel, disabled: cancelling },
         ]}
       >
         앞으로의 일정이 취소돼요. 이미 완료한 활동과 기록은 그대로 남아요.

@@ -11,16 +11,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 58px;
-  padding: 8px 16px;
+  min-height: 64px;
+  padding: 0 12px;
   font-size: var(--font-size-choice);
   font-weight: 700;
 }
 
 .header a {
   display: grid;
-  width: 36px;
-  min-height: 40px;
+  width: 44px;
+  min-height: 44px;
   place-items: center;
   color: inherit;
 }
@@ -530,7 +530,7 @@
 
 .homeSection {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   padding: 16px;
   border-radius: 14px;
   background: var(--color-white);
@@ -548,7 +548,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 36px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -562,14 +561,48 @@
   transform: rotate(180deg);
 }
 
+.homeToggle svg {
+  transition: transform 220ms ease;
+}
+
+.homeExpandable {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 220ms ease,
+    opacity 180ms ease;
+}
+
+.homeExpandable[data-expanded='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.homeExpandable > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .homeToggle svg,
+  .homeExpandable {
+    transition: none;
+  }
+}
+
 .homeSummary {
   font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
 .homeNext {
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: 1.5;
+}
+
+.homeNextWrapper {
+  margin-top: -6px;
 }
 
 .homeList {
@@ -577,10 +610,6 @@
   gap: 10px;
   padding: 0;
   list-style: none;
-}
-
-.homeList[hidden] {
-  display: none;
 }
 
 .homeCard {
@@ -612,7 +641,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 6px;
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
+}
+
+.homeCard .progressLabel {
+  font-size: var(--font-size-body);
 }
 
 .homeCard .progressCard {

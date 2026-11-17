@@ -18,8 +18,8 @@
   flex: none;
   align-items: center;
   justify-content: space-between;
-  min-height: 60px;
-  padding: 0 16px;
+  min-height: 64px;
+  padding: 0 12px;
   background: var(--color-white);
 }
 
@@ -32,7 +32,9 @@
 }
 
 .back {
-  min-width: 40px;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
 }
 
 .header .end {

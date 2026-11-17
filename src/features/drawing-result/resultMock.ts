@@ -39,6 +39,9 @@ const skippedReplies = [getReplyText({ type: 'DONT_KNOW' }), getReplyText({ type
 
 const getActivityKey = ({ programId, round }: ProgramActivityHandoff) => `${programId}:${round}`
 
+const hasCompletedPreviewActivity = ({ programId, round, mock }: ProgramActivityHandoff) =>
+  readPrograms(mock).some((program) => program.id === programId && program.completed >= round)
+
 const isActivityRecord = (record: MockRecord, activity: ProgramActivityHandoff) => {
   const key = getActivityKey(activity)
   return record.activityKey === key || record.activityKey?.startsWith(`${key}:`) === true
@@ -76,10 +79,12 @@ export const createReflectionPreview = (
 
   const activity = source?.programActivity
   if (import.meta.env.DEV && source && activity?.mock) {
-    const completed = readPrograms(activity.mock).some(
-      (program) => program.id === activity.programId && program.completed >= activity.round,
-    )
-    return { records: [], completedDrawingIds: completed ? [source.drawing.drawingId] : [] }
+    try {
+      const completed = hasCompletedPreviewActivity(activity)
+      return { records: [], completedDrawingIds: completed ? [source.drawing.drawingId] : [] }
+    } catch {
+      return { records: [], completedDrawingIds: [] }
+    }
   }
 
   return null
@@ -172,6 +177,9 @@ export const saveDrawingResult = async (
 
   const save = (): SaveOutcome => {
     signal.throwIfAborted()
+    if (import.meta.env.DEV && preview && activity?.mock && hasCompletedPreviewActivity(activity)) {
+      return { status: 'already-saved' }
+    }
     const store = preview ?? readReflections(previewWallet)
     const { records, completedDrawingIds } = store
     const today = recordDate.format(new Date())

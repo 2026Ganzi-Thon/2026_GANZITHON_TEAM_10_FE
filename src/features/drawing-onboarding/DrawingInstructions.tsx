@@ -16,7 +16,7 @@ export const DrawingInstructions = ({ type }: { type: 'paper' | 'canvas' }) => {
     fallbackTopic?: boolean
   } | null
   const topic = state?.topic
-  const showFallback = isPreview || state?.fallbackTopic === true
+  const showFallback = !topic && (isPreview || state?.fallbackTopic === true)
   const { isOpen, openModal, closeModal } = useModal()
   const [showHints, setShowHints] = useState(false)
   const hintsRef = useRef<HTMLDialogElement>(null)
@@ -68,7 +68,7 @@ export const DrawingInstructions = ({ type }: { type: 'paper' | 'canvas' }) => {
           onClick={() =>
             navigate(
               `${isPaper ? '/drawing/upload' : '/drawing/canvas'}${isPreview ? '?preview' : ''}`,
-              { state: { topic, fallbackTopic: state?.fallbackTopic } },
+              { state },
             )
           }
         >

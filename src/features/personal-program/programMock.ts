@@ -1,7 +1,9 @@
 import {
   getMockStorageKey,
   migrateLegacyMockKey,
+  MockStorageUnavailableError,
   readMockStorage,
+  withMockStorageLock,
   writeMockStorage,
 } from '@/lib/mock-storage'
 import {
@@ -83,12 +85,47 @@ const unscopedKeyFor = (scenario?: Scenario) =>
   scenario ? `${storageKey}:${scenario}` : storageKey
 const keyFor = (scenario?: Scenario) => getMockStorageKey(unscopedKeyFor(scenario))
 
+const isStoredDate = (value: unknown) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
 const parsePrograms = (saved: string): PersonalProgram[] => {
-  const programs = JSON.parse(saved) as PersonalProgram[] | null
-  if (!Array.isArray(programs)) throw new Error('저장된 일정 형식을 확인할 수 없어요')
+  let programs: PersonalProgram[] | null
+  try {
+    programs = JSON.parse(saved) as PersonalProgram[] | null
+  } catch {
+    throw new MockStorageUnavailableError()
+  }
+  if (
+    !Array.isArray(programs) ||
+    programs.some(
+      (program) =>
+        !program ||
+        typeof program.id !== 'string' ||
+        !program.id.length ||
+        !Number.isInteger(program.firstReflection?.id) ||
+        program.firstReflection.id < 0 ||
+        typeof program.firstReflection.concern?.id !== 'string' ||
+        !program.firstReflection.concern.id.length ||
+        typeof program.firstReflection.concern.label !== 'string' ||
+        !program.firstReflection.concern.label.length ||
+        !Array.isArray(program.days) ||
+        program.days.some((day) => !Number.isInteger(day) || day < 0 || day > 6) ||
+        !Number.isInteger(program.completed) ||
+        program.completed < 0 ||
+        typeof program.cancelled !== 'boolean' ||
+        (program.completed < rounds.length &&
+          !program.cancelled &&
+          (!program.days.length || !isStoredDate(program.nextDate))),
+    )
+  ) {
+    throw new MockStorageUnavailableError()
+  }
   return programs.map((program) =>
-    program.completed >= rounds.length
-      ? { ...program, completed: rounds.length, nextDate: null }
+    program.completed >= rounds.length || program.cancelled
+      ? { ...program, completed: Math.min(program.completed, rounds.length), nextDate: null }
       : program,
   )
 }
@@ -106,18 +143,17 @@ export const migrateLegacyPrograms = (accountSuffix: string) => {
   }
 }
 
-export const readPrograms = (scenario?: Scenario): PersonalProgram[] => {
-  try {
-    return readMockStorage(keyFor(scenario), parsePrograms) ?? examplePrograms(scenario)
-  } catch {
-    return examplePrograms(scenario)
-  }
-}
+export const readPrograms = (scenario?: Scenario): PersonalProgram[] =>
+  readMockStorage(keyFor(scenario), parsePrograms) ?? examplePrograms(scenario)
 
 const storePrograms = (programs: PersonalProgram[], scenario?: Scenario) => {
   const key = keyFor(scenario)
   writeMockStorage(key, programs)
-  sessionStorage.removeItem(key)
+  try {
+    sessionStorage.removeItem(key)
+  } catch {
+    return
+  }
 }
 
 export const saveProgramSchedule = async ({
@@ -141,43 +177,56 @@ export const saveProgramSchedule = async ({
   if (accountKey !== keyFor(scenario)) throw new Error('로그인 정보가 변경됐어요')
   if (fail) throw new Error('일정 저장 실패')
 
-  const programs = readPrograms(scenario)
-  const program = programId
-    ? programs.find(({ id }) => id === programId)
-    : getProgramForReflection(programs, reflection)
-  if (!programId && program) return
-  if (programId && (!program || program.cancelled || program.completed >= rounds.length)) {
-    throw new Error('변경할 일정을 찾을 수 없어요')
-  }
-
-  const today = getToday()
-  const isDueToday = program && getActivitySchedule(program, today).date === today
-  const nextDate = getNextActivityDate(days, today, isDueToday)
-  if (!nextDate) throw new Error('활동할 요일을 선택해 주세요')
-
-  const saved: PersonalProgram = program
-    ? { ...program, days, nextDate }
-    : {
-        id: crypto.randomUUID(),
-        firstReflection: reflection,
-        days,
-        nextDate,
-        completed: 1,
-        cancelled: false,
+  await withMockStorageLock(
+    unscopedKeyFor(scenario),
+    () => {
+      if (accountKey !== keyFor(scenario)) throw new Error('로그인 정보가 변경됐어요')
+      const programs = readPrograms(scenario)
+      const program = programId
+        ? programs.find(({ id }) => id === programId)
+        : getProgramForReflection(programs, reflection)
+      if (!programId && program) return
+      if (programId && (!program || program.cancelled || program.completed >= rounds.length)) {
+        throw new Error('변경할 일정을 찾을 수 없어요')
       }
-  storePrograms([...programs.filter(({ id }) => id !== saved.id), saved], scenario)
-}
 
-export const cancelProgramSchedule = (id: string, scenario?: Scenario) => {
-  storePrograms(
-    readPrograms(scenario).map((program) =>
-      program.id === id && program.completed < rounds.length
-        ? { ...program, cancelled: true, nextDate: null }
-        : program,
-    ),
-    scenario,
+      const today = getToday()
+      const isDueToday = program && getActivitySchedule(program, today).date === today
+      const nextDate = getNextActivityDate(days, today, isDueToday)
+      if (!nextDate) throw new Error('활동할 요일을 선택해 주세요')
+
+      const saved: PersonalProgram = program
+        ? { ...program, days, nextDate }
+        : {
+            id: crypto.randomUUID(),
+            firstReflection: reflection,
+            days,
+            nextDate,
+            completed: 1,
+            cancelled: false,
+          }
+      storePrograms([...programs.filter(({ id }) => id !== saved.id), saved], scenario)
+    },
+    signal,
   )
 }
+
+export const cancelProgramSchedule = (id: string, scenario?: Scenario, signal?: AbortSignal) =>
+  withMockStorageLock(
+    unscopedKeyFor(scenario),
+    () => {
+      const programs = readPrograms(scenario)
+      const program = programs.find((item) => item.id === id)
+      if (!program || program.cancelled || program.completed >= rounds.length) return
+      storePrograms(
+        programs.map((item) =>
+          item.id === id ? { ...item, cancelled: true, nextDate: null } : item,
+        ),
+        scenario,
+      )
+    },
+    signal,
+  )
 
 const isScheduledActivity = (program: PersonalProgram, activity: ProgramActivity, today: string) =>
   activity.date === today && getProgramActivity(program, today)?.round === activity.round
@@ -188,20 +237,29 @@ export const canCompleteProgramActivity = (activity: ProgramActivity, scenario?:
       program.id === activity.programId && isScheduledActivity(program, activity, getToday()),
   )
 
-export const completeProgramActivity = (activity: ProgramActivity, scenario?: Scenario) => {
-  const programs = readPrograms(scenario)
-  const program = programs.find(({ id }) => id === activity.programId)
-  const today = getToday()
-  if (!program) return false
-  if (program.completed >= activity.round) return true
-  if (!isScheduledActivity(program, activity, today)) return false
+export const completeProgramActivity = (
+  activity: ProgramActivity,
+  scenario?: Scenario,
+  signal?: AbortSignal,
+) =>
+  withMockStorageLock(
+    unscopedKeyFor(scenario),
+    () => {
+      const programs = readPrograms(scenario)
+      const program = programs.find(({ id }) => id === activity.programId)
+      const today = getToday()
+      if (!program) return false
+      if (program.completed >= activity.round) return true
+      if (!isScheduledActivity(program, activity, today)) return false
 
-  const completed = activity.round
-  const nextDate = completed < rounds.length ? getNextActivityDate(program.days, today) : null
+      const completed = activity.round
+      const nextDate = completed < rounds.length ? getNextActivityDate(program.days, today) : null
 
-  storePrograms(
-    programs.map((item) => (item.id === program.id ? { ...item, completed, nextDate } : item)),
-    scenario,
+      storePrograms(
+        programs.map((item) => (item.id === program.id ? { ...item, completed, nextDate } : item)),
+        scenario,
+      )
+      return true
+    },
+    signal,
   )
-  return true
-}

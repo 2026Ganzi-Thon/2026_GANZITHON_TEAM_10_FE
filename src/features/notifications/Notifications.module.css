@@ -1,0 +1,118 @@
+.page {
+  min-height: 100%;
+  background: var(--color-white);
+}
+.header {
+  position: relative;
+}
+.readAll {
+  position: absolute;
+  top: 10px;
+  right: 22px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font:
+    600 var(--font-size-caption) Pretendard,
+    sans-serif;
+  cursor: pointer;
+}
+.readAll:disabled {
+  color: var(--color-gray);
+  cursor: default;
+}
+.content {
+  padding: 40px 34px 40px;
+}
+.filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.filters button {
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 0;
+  border-radius: 100px;
+  background: var(--color-gray-light);
+  color: var(--color-black);
+  font:
+    500 var(--font-size-caption) Pretendard,
+    sans-serif;
+  cursor: pointer;
+}
+.filters button[aria-pressed='true'] {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+.group + .group {
+  margin-top: 28px;
+}
+.group h2 {
+  margin: 0 4px 8px;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+}
+.list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.item {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--color-surface-gray);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.item.unread {
+  background: var(--color-surface-green);
+}
+.icon {
+  flex: 0 0 18px;
+  margin-top: 1px;
+  font-size: 16px;
+}
+.message {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 5px;
+}
+.subtitle {
+  font-size: 10px;
+  line-height: 1.4;
+}
+.title {
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.time {
+  flex: none;
+  color: var(--color-gray);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.empty {
+  margin: 28px 4px;
+  color: var(--color-gray);
+  font-size: var(--font-size-body);
+}
+.page button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

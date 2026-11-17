@@ -1,0 +1,90 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 28px;
+  padding: 12px 23px 32px;
+}
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  border-radius: 12px;
+  background: var(--color-surface-green);
+}
+.summaryIcon {
+  display: grid;
+  flex: none;
+  width: 45px;
+  height: 45px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--color-primary);
+  background: white;
+}
+.summary p {
+  margin: 0;
+}
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 19px;
+  border: 1px solid var(--color-gray);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.selected {
+  border-color: var(--color-primary);
+}
+.plan:has(input:focus-visible) {
+  outline: 2px solid var(--color-black);
+  outline-offset: 2px;
+}
+.radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.planHeading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.benefits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.benefits > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: auto 16px 0;
+  text-align: center;
+}
+.footer p {
+  margin: 0;
+}
