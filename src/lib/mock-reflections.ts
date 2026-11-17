@@ -1,8 +1,9 @@
 import {
   getMockStorageKey,
   migrateLegacyMockKey,
-  mockStorageLock,
+  MockStorageUnavailableError,
   readMockStorage,
+  withMockStorageLock,
   writeMockStorage,
 } from './mock-storage'
 
@@ -31,12 +32,37 @@ const recordsKey = 'moyang:mock-reflection-records'
 const previewRecordsKey = `${recordsKey}:wool-preview`
 
 const parseReflections = (saved: string): MockReflectionStore => {
-  const data = JSON.parse(saved) as MockReflectionStore | MockRecord[] | null
-  if (Array.isArray(data)) {
-    return { records: data, completedDrawingIds: data.map(({ drawingId }) => drawingId) }
+  let data: MockReflectionStore | MockRecord[] | null
+  try {
+    data = JSON.parse(saved) as MockReflectionStore | MockRecord[] | null
+  } catch {
+    throw new MockStorageUnavailableError()
   }
-  if (!Array.isArray(data?.records) || !Array.isArray(data.completedDrawingIds)) {
-    throw new Error('저장된 회고 형식을 확인할 수 없어요')
+  const records = Array.isArray(data) ? data : data?.records
+  if (
+    !Array.isArray(records) ||
+    records.some(
+      (record) =>
+        !record ||
+        !Number.isInteger(record.drawingId) ||
+        typeof record.recordDate !== 'string' ||
+        !record.recordDate ||
+        (record.sheepReward !== undefined && record.sheepReward !== 1),
+    )
+  ) {
+    throw new MockStorageUnavailableError()
+  }
+  if (Array.isArray(data))
+    return { records, completedDrawingIds: records.map(({ drawingId }) => drawingId) }
+  if (
+    !data ||
+    !Array.isArray(data.completedDrawingIds) ||
+    !data.completedDrawingIds.every(Number.isInteger) ||
+    (data.paidQuestions !== undefined &&
+      (!Array.isArray(data.paidQuestions) ||
+        data.paidQuestions.some((question) => typeof question !== 'string' || !question)))
+  ) {
+    throw new MockStorageUnavailableError()
   }
   return data
 }
@@ -85,17 +111,8 @@ export const getWoolBalance = (store = readReflections()) => {
   return Math.max(0, earned - (store.paidQuestions?.length ?? 0))
 }
 
-export const withReflectionLock = <T>(signal: AbortSignal, update: () => T): Promise<T> => {
-  signal.throwIfAborted()
-  const storageKey = getMockStorageKey(recordsKey)
-  const applyUpdate = () => {
-    signal.throwIfAborted()
-    if (storageKey !== getMockStorageKey(recordsKey)) throw new Error('로그인 정보가 변경됐어요')
-    return update()
-  }
-  if (!window.navigator.locks) return Promise.resolve(applyUpdate())
-  return window.navigator.locks.request(mockStorageLock, { signal }, applyUpdate)
-}
+export const withReflectionLock = <T>(signal: AbortSignal, update: () => T) =>
+  withMockStorageLock(recordsKey, update, signal)
 
 export const spendWoolForQuestion = (questionId: string, signal: AbortSignal, preview = false) =>
   withReflectionLock(signal, () => {
