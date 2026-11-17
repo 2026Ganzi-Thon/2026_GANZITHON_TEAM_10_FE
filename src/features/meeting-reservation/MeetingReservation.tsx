@@ -22,9 +22,11 @@ import {
   canEnterWaitingRoom,
   canRefundReservation,
   isReservationStatusPending,
+  isSameBooking,
   loadReservation,
   getMeetingRecommendations,
   meetingSteps,
+  ReservationChangedError,
   ReservationError,
 } from './reservationMock'
 import styles from './MeetingReservation.module.css'
@@ -78,6 +80,7 @@ export const MeetingReservation = ({
   const { key, search, state } = useLocation()
   const navigationType = useNavigationType()
   const scenario = import.meta.env.DEV ? new URLSearchParams(search).get('mock') : null
+  const waitingSearch = scenario === 'entry-error' ? '?mock=entry-error' : ''
   const listPath = getMeetingListPath(state?.meetingListSearch)
   const [meeting, setMeeting] = useState<ScheduledMeeting | null>(null)
   const [loadError, setLoadError] = useState(false)
@@ -88,7 +91,7 @@ export const MeetingReservation = ({
   const [actionError, setActionError] = useState('')
   const [notice, setNotice] = useState<MeetingNotice | 'wool' | null>(null)
   const [applied, setApplied] = useState<ScheduledMeeting | null>(null)
-  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [cancellationTarget, setCancellationTarget] = useState<ScheduledMeeting | null>(null)
   const [cancelled, setCancelled] = useState<{
     refunded: boolean
     cancelled: boolean
@@ -103,7 +106,9 @@ export const MeetingReservation = ({
   const primaryActionRef = useRef<HTMLButtonElement>(null)
   const appliedWasOpenRef = useRef(false)
   const loadedRef = useRef(false)
+  const refreshedAfterGrace = useRef<number | null>(null)
   const loading = loadedAttempt !== attempt
+  const confirmCancel = cancellationTarget !== null
 
   useLayoutEffect(() => {
     const scroller = pageRef.current?.parentElement
@@ -159,8 +164,12 @@ export const MeetingReservation = ({
         setMeeting(data)
         setLoadedAttempt(attempt)
         setLoadError(false)
-        setApplied((current) => (current && data.membership ? data : null))
-        setConfirmCancel((current) => current && Boolean(data.membership))
+        setApplied((current) =>
+          current && data.membership && isSameBooking(current, data) ? data : null,
+        )
+        setCancellationTarget((current) =>
+          current && data.membership && isSameBooking(current, data) ? current : null,
+        )
         setCancelled((current) => (data.membership ? null : current))
       },
       (error: unknown) => {
@@ -217,6 +226,19 @@ export const MeetingReservation = ({
     return () => window.clearInterval(timer)
   }, [])
 
+  useEffect(() => {
+    if (
+      !meeting?.membership ||
+      loading ||
+      loadError ||
+      !isReservationStatusPending(meeting, now) ||
+      refreshedAfterGrace.current === meeting.startAt
+    )
+      return
+    refreshedAfterGrace.current = meeting.startAt
+    setAttempt((value) => value + 1)
+  }, [meeting, now, loading, loadError])
+
   const returnToList = () => {
     actionControllerRef.current?.abort()
     if (state?.fromMeetingList && window.history.state?.idx > 0) navigate(-1)
@@ -241,7 +263,7 @@ export const MeetingReservation = ({
   }
 
   const apply = async () => {
-    if (busyRef.current || storageScope !== getMockStorageScope()) return
+    if (!meeting || busyRef.current || storageScope !== getMockStorageScope()) return
     const controller = new AbortController()
     actionControllerRef.current = controller
     busyRef.current = true
@@ -254,6 +276,7 @@ export const MeetingReservation = ({
         fail,
         full: scenario === 'join-full',
         delay: scenario === 'join-loading' ? 3000 : undefined,
+        expectedStartAt: meeting.startAt,
       })
       if (!controller.signal.aborted && storageScope === getMockStorageScope()) {
         setMeeting(result.meeting)
@@ -262,7 +285,10 @@ export const MeetingReservation = ({
       }
     } catch (error) {
       if (controller.signal.aborted) return
-      if (error instanceof ReservationError) setNotice(error.code)
+      if (error instanceof ReservationChangedError) {
+        setActionError(error.message)
+        retryLoad()
+      } else if (error instanceof ReservationError) setNotice(error.code)
       else setActionError('모임을 신청하지 못했어요. 다시 시도해 주세요.')
     } finally {
       busyRef.current = false
@@ -272,7 +298,7 @@ export const MeetingReservation = ({
   }
 
   const cancel = async () => {
-    if (busyRef.current || storageScope !== getMockStorageScope()) return
+    if (!cancellationTarget || busyRef.current || storageScope !== getMockStorageScope()) return
     const controller = new AbortController()
     actionControllerRef.current = controller
     busyRef.current = true
@@ -284,17 +310,22 @@ export const MeetingReservation = ({
       const result = await cancelReservation(meetingId, controller.signal, {
         fail,
         delay: scenario === 'cancel-loading' ? 3000 : undefined,
+        expectedBooking: cancellationTarget,
       })
       if (!controller.signal.aborted && storageScope === getMockStorageScope()) {
-        setConfirmCancel(false)
+        setCancellationTarget(null)
         setLoadError(false)
         setCancelled(result)
         if (!result.cancelled) retryLoad()
       }
     } catch (error) {
       if (controller.signal.aborted) return
-      if (error instanceof ReservationError) {
-        setConfirmCancel(false)
+      if (error instanceof ReservationChangedError) {
+        setCancellationTarget(null)
+        setActionError(error.message)
+        retryLoad()
+      } else if (error instanceof ReservationError) {
+        setCancellationTarget(null)
         setNotice(error.code)
       } else {
         setNow(Date.now())
@@ -330,7 +361,11 @@ export const MeetingReservation = ({
     }
     if (meeting.status === 'in-progress') {
       return (
-        <Navigate to={`/meetings/${encodeURIComponent(meetingId)}/chat`} replace state={state} />
+        <Navigate
+          to={`/meetings/${encodeURIComponent(meetingId)}/chat${waitingSearch}`}
+          replace
+          state={state}
+        />
       )
     }
   }
@@ -446,7 +481,7 @@ export const MeetingReservation = ({
                       setNow(Date.now())
                       return
                     }
-                    navigate(`/meetings/${encodeURIComponent(meetingId)}/waiting`, {
+                    navigate(`/meetings/${encodeURIComponent(meetingId)}/waiting${waitingSearch}`, {
                       state: {
                         fromReservation: true,
                         meetingListSearch: state?.meetingListSearch,
@@ -466,7 +501,7 @@ export const MeetingReservation = ({
                   disabled={Boolean(statusPending) || loading || loadError || pending !== null}
                   onClick={() => {
                     setActionError('')
-                    setConfirmCancel(true)
+                    setCancellationTarget(meeting)
                   }}
                 >
                   모임 취소하기
@@ -547,7 +582,7 @@ export const MeetingReservation = ({
       <Modal
         isOpen={confirmCancel}
         onClose={() => {
-          if (!busyRef.current) setConfirmCancel(false)
+          if (!busyRef.current) setCancellationTarget(null)
         }}
         title={
           meeting?.membership === 'host' ? '모임을 취소하시겠어요?' : '모임 신청을 취소하시겠어요?'
@@ -562,7 +597,7 @@ export const MeetingReservation = ({
           {
             label: '모임 유지하기',
             disabled: pending !== null,
-            onClick: () => setConfirmCancel(false),
+            onClick: () => setCancellationTarget(null),
           },
         ]}
       >

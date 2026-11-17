@@ -29,6 +29,7 @@ export type MockReflectionStore = {
 }
 
 export type MockMeetingReservation = {
+  bookingId?: string
   joined: boolean
   isHost: boolean
   cancelled: boolean
@@ -63,6 +64,8 @@ const parseReflections = (saved: string): MockReflectionStore => {
           typeof reservation.joined !== 'boolean' ||
           typeof reservation.isHost !== 'boolean' ||
           typeof reservation.cancelled !== 'boolean' ||
+          (reservation.bookingId !== undefined &&
+            (typeof reservation.bookingId !== 'string' || !reservation.bookingId.trim())) ||
           ![-1, 0, 1].includes(reservation.participantDelta) ||
           !Number.isSafeInteger(reservation.woolChange) ||
           typeof reservation.startAt !== 'number' ||

@@ -11,6 +11,8 @@ import {
 } from '@/features/meeting-list/meetingMock'
 import type { Meeting } from '@/features/meeting-list/meetingMock'
 import { useMockStorageScope } from '@/hooks/useMockStorageScope'
+import { apiClient, getAccessToken } from '@/lib/api-client'
+import { getMockStorageScope } from '@/lib/mock-storage'
 import { autoAdmissionLead, readWaitingRoom, updateWaitingRoom } from './waitingRoomMock'
 import type { RoomAction, WaitingRoom } from './waitingRoomMock'
 import clockIcon from '@/assets/meeting-waiting-room/clock.svg'
@@ -97,6 +99,7 @@ const WaitingRoomScreen = ({
   )
   const [modal, setModal] = useState<'nickname' | 'leave' | null>(null)
   const [draft, setDraft] = useState('')
+  const [profileNickname, setProfileNickname] = useState('')
   const [pending, setPending] = useState<RoomAction | null>(null)
   const [error, setError] = useState('')
   const request = useRef<AbortController | null>(null)
@@ -112,10 +115,35 @@ const WaitingRoomScreen = ({
   try {
     meeting = getMockMeetingFixture(meetingId)
     if (meeting && !scope) throw new Error('로그인 정보를 확인할 수 없어요.')
-    if (meeting && scope) room = readWaitingRoom(meeting, scope, scenario, now, openedAt)
+    if (meeting && scope)
+      room = readWaitingRoom(meeting, scope, scenario, now, openedAt, profileNickname)
   } catch {
     loadError = true
   }
+  const bookingId = meeting?.kind === 'scheduled' ? meeting.bookingId : undefined
+
+  useEffect(() => {
+    const token = getAccessToken()
+    if (!scope || !token) return
+    const controller = new AbortController()
+    void apiClient
+      .get<{ success: boolean; data?: { nickname?: string } }>('/api/users/me', {
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then(({ data }) => {
+        if (
+          !controller.signal.aborted &&
+          getMockStorageScope() === scope &&
+          getAccessToken() === token &&
+          data.success &&
+          typeof data.data?.nickname === 'string'
+        )
+          setProfileNickname(data.data.nickname.trim())
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [scope])
 
   useEffect(() => {
     const refresh = () => setNow(Date.now())
@@ -167,7 +195,7 @@ const WaitingRoomScreen = ({
   }
 
   const run = useCallback(
-    async (action: RoomAction, nickname?: string) => {
+    async (action: RoomAction, expectedBookingId: string | undefined, nickname?: string) => {
       if (request.current || !scope) return false
       const controller = new AbortController()
       request.current = controller
@@ -185,6 +213,7 @@ const WaitingRoomScreen = ({
           signal: controller.signal,
           nickname,
           fail,
+          expectedBookingId,
         })
         if (controller.signal.aborted) return false
         setNow(Date.now())
@@ -231,9 +260,21 @@ const WaitingRoomScreen = ({
       return
     }
     if (!autoJoin || error || pending) return
-    const timer = window.setTimeout(() => void run('join'), 0)
+    const timer = window.setTimeout(() => void run('join', bookingId), 0)
     return () => window.clearTimeout(timer)
-  }, [autoJoin, entered, error, listPath, live, meetingListKey, navigate, pending, phase, run])
+  }, [
+    autoJoin,
+    bookingId,
+    entered,
+    error,
+    listPath,
+    live,
+    meetingListKey,
+    navigate,
+    pending,
+    phase,
+    run,
+  ])
 
   if (loadError) {
     return (
@@ -339,7 +380,7 @@ const WaitingRoomScreen = ({
           color: 'gray',
           disabled: Boolean(pending),
           onClick: () => {
-            void run('leave').then((left) => {
+            void run('leave', bookingId).then((left) => {
               if (left) {
                 if (live) returnToList()
                 else returnToDetail()
@@ -542,7 +583,7 @@ const WaitingRoomScreen = ({
             <>
               <Button
                 disabled={!room.canStart || !room.entered || Boolean(pending)}
-                onClick={() => void run('start')}
+                onClick={() => void run('start', bookingId)}
               >
                 {pending === 'start' ? '시작 중…' : '모임 시작하기'}
               </Button>
@@ -552,7 +593,10 @@ const WaitingRoomScreen = ({
             </>
           )}
           {(meeting.kind === 'scheduled' || (live && !room.entered && showJoinError)) && (
-            <Button disabled={!room.canJoin || Boolean(pending)} onClick={() => void run('join')}>
+            <Button
+              disabled={!room.canJoin || Boolean(pending)}
+              onClick={() => void run('join', bookingId)}
+            >
               {pending === 'join' ? '입장 중…' : showJoinError ? '다시 입장하기' : '모임 입장하기'}
             </Button>
           )}
@@ -586,7 +630,7 @@ const WaitingRoomScreen = ({
             label: '저장하기',
             disabled: !draft.trim() || Boolean(pending),
             onClick: () => {
-              void run('rename', draft).then((saved) => {
+              void run('rename', bookingId, draft).then((saved) => {
                 if (saved) setModal(null)
               })
             },

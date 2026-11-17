@@ -165,6 +165,29 @@ function seedPaidBooking(e, id) {
   })
 }
 
+test('an application keeps the displayed date across the mock schedule rollover', async () => {
+  const e = environment()
+  e.seed()
+  const { meeting } = await e.reservation.applyForMeeting('211', signal())
+  await e.reservation.cancelReservation('211', signal())
+  e.time(meeting.startAt - 1000)
+  const before = JSON.stringify([...e.values])
+  const pending = e.reservation.applyForMeeting('211', signal(), {
+    expectedStartAt: meeting.startAt,
+  })
+  e.time(meeting.startAt + 1)
+  await assert.rejects(pending, /일정이 변경/)
+  assert.equal(JSON.stringify([...e.values]), before)
+  assert.equal(e.reflections.getWoolBalance(), 3)
+  const next = e.meetings.getMockMeeting('211')
+  assert.ok(next.startAt > meeting.startAt)
+  const booked = await e.reservation.applyForMeeting('211', signal(), {
+    expectedStartAt: next.startAt,
+  })
+  assert.equal(booked.meeting.startAt, next.startAt)
+  assert.equal(e.reflections.getWoolBalance(), 2)
+})
+
 test('insufficient wool and rejected requests leave storage unchanged', async () => {
   const e = environment()
   e.seed(0)
@@ -579,14 +602,31 @@ test('new applications close at the exact start, while existing membership is id
   assert.equal(JSON.stringify([...e.values]), original)
 })
 
-test('an elapsed waiting-room window does not change membership or wool while status is pending', async () => {
+test('an unvisited reservation is cancelled at the deadline without changing the ledger on read', async () => {
   const e = environment()
   e.seed()
-  const meeting = e.meetings.getMockMeeting('202')
+  const { meeting } = await e.reservation.applyForMeeting('211', signal())
   e.time(meeting.startAt + 120000)
   const original = JSON.stringify([...e.values])
-  await assert.rejects(e.reservation.cancelReservation('202', signal()), /시작 상태/)
+  await code(e.reservation.loadReservation('211', signal()), 'cancelled')
+  await code(e.reservation.cancelReservation('211', signal()), 'cancelled')
   assert.equal(JSON.stringify([...e.values]), original)
+})
+
+test('an older cancellation cannot cancel a replacement booking for the same start', async () => {
+  const e = environment()
+  e.seed()
+  const first = await e.reservation.applyForMeeting('211', signal())
+  await e.reservation.cancelReservation('211', signal())
+  const second = await e.reservation.applyForMeeting('211', signal())
+  assert.equal(first.meeting.startAt, second.meeting.startAt)
+  assert.notEqual(first.meeting.bookingId, second.meeting.bookingId)
+  await assert.rejects(
+    e.reservation.cancelReservation('211', signal(), { expectedBooking: first.meeting }),
+    /예약이 변경/,
+  )
+  assert.equal(e.meetings.getMockMeeting('211').bookingId, second.meeting.bookingId)
+  assert.equal(e.reflections.getWoolBalance(), 2)
 })
 test('malformed reservation data is not reset or overwritten', async () => {
   const e = environment()

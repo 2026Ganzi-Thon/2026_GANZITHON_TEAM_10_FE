@@ -8,6 +8,7 @@ import {
   useSearchParams,
 } from 'react-router-dom'
 import { Button, Modal } from '@/components'
+import { scheduledStartGrace } from '@/features/meeting-reservation/reservationMock'
 import { applyWaitingRoomStatuses } from '@/features/meeting-waiting-room/waitingRoomMock'
 import arrowIcon from '@/assets/meetings/arrow.svg'
 import attendeesIcon from '@/assets/meetings/attendees.svg'
@@ -498,16 +499,18 @@ export const MeetingList = () => {
 
   useEffect(() => {
     if (!list || list === 'error') return
-    const nextStart = list.meetings.reduce(
-      (next, meeting) =>
-        meeting.kind === 'scheduled' && meeting.status === 'waiting' && meeting.startAt > now
-          ? Math.min(next, meeting.startAt)
-          : next,
-      Infinity,
-    )
+    const nextStart = [...list.meetings, ...list.myMeetings].reduce((next, meeting) => {
+      if (meeting.kind !== 'scheduled' || meeting.status !== 'waiting') return next
+      if (meeting.startAt > now) return Math.min(next, meeting.startAt)
+      const deadline = meeting.startAt + scheduledStartGrace
+      return meeting.membership && deadline > now ? Math.min(next, deadline) : next
+    }, Infinity)
     if (!Number.isFinite(nextStart)) return
     const timer = window.setTimeout(
-      () => setNow(Date.now()),
+      () => {
+        setNow(Date.now())
+        setAttempt((value) => value + 1)
+      },
       Math.min(Math.max(0, nextStart - Date.now()), 2_147_483_647),
     )
     return () => window.clearTimeout(timer)
