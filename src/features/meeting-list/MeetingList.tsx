@@ -503,7 +503,10 @@ export const MeetingList = () => {
     )
     if (!Number.isFinite(nextStart)) return
     const timer = window.setTimeout(
-      () => setNow(Date.now()),
+      () => {
+        setNow(Date.now())
+        setAttempt((value) => value + 1)
+      },
       Math.min(Math.max(0, nextStart - Date.now()), 2_147_483_647),
     )
     return () => window.clearTimeout(timer)

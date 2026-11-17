@@ -25,6 +25,7 @@ import {
   loadReservation,
   getMeetingRecommendations,
   meetingSteps,
+  ReservationChangedError,
   ReservationError,
 } from './reservationMock'
 import styles from './MeetingReservation.module.css'
@@ -241,7 +242,7 @@ export const MeetingReservation = ({
   }
 
   const apply = async () => {
-    if (busyRef.current || storageScope !== getMockStorageScope()) return
+    if (!meeting || busyRef.current || storageScope !== getMockStorageScope()) return
     const controller = new AbortController()
     actionControllerRef.current = controller
     busyRef.current = true
@@ -254,6 +255,7 @@ export const MeetingReservation = ({
         fail,
         full: scenario === 'join-full',
         delay: scenario === 'join-loading' ? 3000 : undefined,
+        expectedStartAt: meeting.startAt,
       })
       if (!controller.signal.aborted && storageScope === getMockStorageScope()) {
         setMeeting(result.meeting)
@@ -262,7 +264,10 @@ export const MeetingReservation = ({
       }
     } catch (error) {
       if (controller.signal.aborted) return
-      if (error instanceof ReservationError) setNotice(error.code)
+      if (error instanceof ReservationChangedError) {
+        setActionError(error.message)
+        retryLoad()
+      } else if (error instanceof ReservationError) setNotice(error.code)
       else setActionError('모임을 신청하지 못했어요. 다시 시도해 주세요.')
     } finally {
       busyRef.current = false

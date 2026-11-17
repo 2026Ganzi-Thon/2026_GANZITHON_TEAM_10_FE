@@ -48,7 +48,8 @@ export type MeetingListData = {
 
 const day = 86_400_000
 const now = Date.now()
-const kstDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(now)
+const kstDateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' })
+const kstDate = kstDateFormat.format(now)
 const atKst = (time: string, daysAhead: number) =>
   Date.parse(kstDate + 'T' + time + '+09:00') + daysAhead * day
 
@@ -236,6 +237,17 @@ const pastMeetings: PastMeeting[] = [
   },
 ]
 
+const recurringMockMeetingIds = new Set(['201', '202', '211', '208', '209', '210', '217'])
+
+const getAvailableMockStartAt = (meeting: ScheduledMeeting, previousStartAt: number) => {
+  const current = Date.now()
+  if (previousStartAt > current) return previousStartAt
+  if (meeting.startAt > current || !recurringMockMeetingIds.has(meeting.id)) return meeting.startAt
+  const today = Date.parse(kstDateFormat.format(current) + 'T00:00:00+09:00')
+  const fixtureDay = atKst('00:00:00', 0)
+  return meeting.startAt + today - fixtureDay
+}
+
 const applyReservation = (
   meeting: Meeting,
   reservations: Record<string, MockMeetingReservation> = {},
@@ -245,7 +257,10 @@ const applyReservation = (
   if (!reservation) return { ...meeting, woolPaid: false }
   return {
     ...meeting,
-    startAt: reservation.startAt,
+    startAt:
+      reservation.joined || reservation.cancelled
+        ? reservation.startAt
+        : getAvailableMockStartAt(meeting, reservation.startAt),
     membership: reservation.joined ? (reservation.isHost ? 'host' : 'participant') : undefined,
     participants: Math.max(0, meeting.participants + reservation.participantDelta),
     status: reservation.cancelled ? 'cancelled' : meeting.status,

@@ -45,6 +45,8 @@ export class ReservationError extends Error {
   }
 }
 
+export class ReservationChangedError extends Error {}
+
 const waitForResponse = (signal: AbortSignal, delay = 400) => {
   signal.throwIfAborted()
   const scope = getMockStorageScope()
@@ -110,7 +112,12 @@ type ApplicationResult = { meeting: ScheduledMeeting; applied: boolean }
 export const applyForMeeting = async (
   id: string,
   signal: AbortSignal,
-  { fail = false, full = false, delay = 400 } = {},
+  {
+    fail = false,
+    full = false,
+    delay = 400,
+    expectedStartAt,
+  }: { fail?: boolean; full?: boolean; delay?: number; expectedStartAt?: number } = {},
 ) => {
   const key = getReflectionStorageKey()
   await waitForResponse(signal, delay)
@@ -118,6 +125,11 @@ export const applyForMeeting = async (
   return updateMeetingReservation<ApplicationResult>(key, id, signal, (store) => {
     const reservations = store.meetingReservations ?? {}
     const meeting = requireMeeting(id, reservations)
+    if (expectedStartAt !== undefined && meeting.startAt !== expectedStartAt) {
+      throw new ReservationChangedError(
+        '모임 일정이 변경됐어요. 새 일정을 확인한 뒤 다시 신청해 주세요.',
+      )
+    }
     if (meeting.membership) return { result: { meeting, applied: false } }
     if (meeting.status !== 'waiting' || Date.now() >= meeting.startAt) {
       throw new ReservationError('started')
@@ -132,6 +144,7 @@ export const applyForMeeting = async (
         isHost: false,
         participantDelta: current.participantDelta + 1,
         woolChange: current.woolChange - 1,
+        startAt: meeting.startAt,
       },
       result: {
         meeting: {
