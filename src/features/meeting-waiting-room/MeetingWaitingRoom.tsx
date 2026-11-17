@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faArrowUp, faLock } from '@fortawesome/free-solid-svg-icons'
 import { Button, Input, Modal, PageHeader, SheepProfile } from '@/components'
+import { MeetingChat } from '@/features/meeting-chat/MeetingChat'
 import { getMeetingEntry, getMeetingListPath } from '@/features/meeting-list/meetingEntry'
 import {
   getMockMeetingFixture,
@@ -405,6 +406,18 @@ const WaitingRoomScreen = ({
   )
 
   if (view === 'chat') {
+    if (room.phase === 'IN_PROGRESS' && scope) {
+      return (
+        <MeetingChat
+          meeting={meeting}
+          room={room}
+          scope={scope}
+          scenario={scenario}
+          openedAt={openedAt}
+          onBack={() => navigate(listPath, { replace: true, state: listState })}
+        />
+      )
+    }
     return (
       <>
         <WaitingChat
@@ -669,18 +682,6 @@ const WaitingChat = ({
   onBack: () => void
   onLeave: () => void
 }) => {
-  if (room.phase === 'IN_PROGRESS') {
-    return (
-      <>
-        <PageHeader title={meeting.title} action="back" onNavigate={onBack} />
-        <section className={styles.notice}>
-          <h2>모임이 시작됐어요</h2>
-          <p>모임 채팅 화면은 준비 중이에요.</p>
-          <Button onClick={onBack}>모임 목록으로 돌아가기</Button>
-        </section>
-      </>
-    )
-  }
   const inGrace = room.startAt !== null && now >= room.startAt
   return (
     <div className={styles.chat}>

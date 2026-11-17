@@ -637,3 +637,13 @@ test('a blank saved nickname is not silently accepted or overwritten', async () 
   await assert.rejects(env.update('join'))
   assert.equal(env.values.get(key), invalid)
 })
+
+test('a resolved nickname is distinguished from a temporary fallback, even when both have the same text', async () => {
+  const env = environment()
+  await env.update('join', live)
+  assert.equal(env.read().nicknameReady, false)
+  assert.equal(env.read(live, null, '딸기를 좋아하는 양').nicknameReady, true)
+  await env.update('rename', live, { nickname: '딸기를 좋아하는 양' })
+  assert.equal(env.read().nicknameReady, true)
+  assert.equal(env.read(live, null, '다른 프로필 이름').nickname, '딸기를 좋아하는 양')
+})

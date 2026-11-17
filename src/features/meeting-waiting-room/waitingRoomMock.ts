@@ -15,7 +15,6 @@ const nicknames = [
   '하늘을 좋아하는 양',
   '별을 좋아하는 양',
 ]
-
 export type RoomParticipant = {
   id: string
   nickname: string
@@ -121,6 +120,7 @@ const makeRecord = (meeting: Meeting, now: number, scenario: string | null): Roo
 }
 
 const peerCount = (meeting: Meeting, scenario: string | null) => {
+  if (scenario === 'chat-six' && meeting.capacity === 6) return 5
   if (meeting.kind === 'scheduled') {
     if (scenario === 'host-absent') return 2
     if (scenario === 'scheduled-start' || scenario === 'grace-start') return 1
@@ -225,6 +225,7 @@ const getRoom = (
     participants: present,
     entered: enteredAt !== null,
     nickname,
+    nicknameReady: savedNickname !== null || Boolean(profileNickname?.trim()),
     isHost,
     canJoin,
     canStart,

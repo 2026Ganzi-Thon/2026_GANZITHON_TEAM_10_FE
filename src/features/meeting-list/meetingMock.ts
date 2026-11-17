@@ -41,6 +41,8 @@ export type Meeting = LiveMeeting | ScheduledMeeting
 export type PastMeeting = Pick<MeetingInfo, 'id' | 'title' | 'concern'> & {
   startAt: number
   endAt: number
+  hasChatHistory?: boolean
+  hasDrawing?: boolean
 }
 
 export const pastConversationDuration = 24 * 60 * 60 * 1000

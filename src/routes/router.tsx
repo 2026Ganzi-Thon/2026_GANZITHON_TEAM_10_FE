@@ -25,6 +25,8 @@ import { MeetingsPage } from '@/pages/MeetingsPage'
 import { MeetingDetailPage } from '@/pages/MeetingDetailPage'
 import { MeetingWaitingPage } from '@/pages/MeetingWaitingPage'
 import { MeetingChatPage } from '@/pages/MeetingChatPage'
+import { MeetingDrawingPage } from '@/pages/MeetingDrawingPage'
+import { MeetingHistoryPage } from '@/pages/MeetingHistoryPage'
 import { RecordsPage } from '@/pages/RecordsPage'
 import { RecordDetailPage } from '@/pages/RecordDetailPage'
 import { MyPage } from '@/pages/MyPage'
@@ -103,6 +105,8 @@ export const router = createBrowserRouter([
       { path: '/meetings/:meetingId', element: <MeetingDetailPage /> },
       { path: '/meetings/:meetingId/waiting', element: <MeetingWaitingPage /> },
       { path: '/meetings/:meetingId/chat', element: <MeetingChatPage /> },
+      { path: '/meetings/:meetingId/drawing/:step', element: <MeetingDrawingPage /> },
+      { path: '/meetings/:meetingId/history', element: <MeetingHistoryPage /> },
       { path: '/records', element: <RecordsPage /> },
       { path: '/records/:recordId', element: <RecordDetailPage /> },
       { path: '/my', element: <MyPage /> },
