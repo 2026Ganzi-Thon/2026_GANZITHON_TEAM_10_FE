@@ -244,9 +244,9 @@ const pastMeetings: PastMeeting[] = [
 
 const recurringMockMeetingIds = new Set(['201', '202', '211', '208', '209', '210', '217'])
 
-const getAvailableMockStartAt = (meeting: ScheduledMeeting, previousStartAt: number) => {
+const getAvailableMockStartAt = (meeting: ScheduledMeeting, previousStartAt?: number) => {
   const current = Date.now()
-  if (previousStartAt > current) return previousStartAt
+  if (previousStartAt !== undefined && previousStartAt > current) return previousStartAt
   if (meeting.startAt > current || !recurringMockMeetingIds.has(meeting.id)) return meeting.startAt
   const today = Date.parse(kstDateFormat.format(current) + 'T00:00:00+09:00')
   const fixtureDay = atKst('00:00:00', 0)
@@ -259,7 +259,16 @@ const applyReservation = (
 ): Meeting => {
   const reservation = reservations[meeting.id]
   if (meeting.kind !== 'scheduled') return meeting
-  if (!reservation) return { ...meeting, woolPaid: false }
+  if (!reservation) {
+    return {
+      ...meeting,
+      startAt:
+        meeting.status === 'waiting' && !meeting.membership
+          ? getAvailableMockStartAt(meeting)
+          : meeting.startAt,
+      woolPaid: false,
+    }
+  }
   return {
     ...meeting,
     startAt:
@@ -325,7 +334,7 @@ export const loadMeetings = async ({
   const visibleIds = new Set(visibleMeetings.map(({ id }) => id))
   const otherReservations = Object.entries(reservations).flatMap(([id, reservation]) => {
     if (!reservation.joined || visibleIds.has(id)) return []
-    const meeting = getMockMeeting(id, reservations)
+    const meeting = getMockMeetingFixture(id, reservations)
     return meeting?.kind === 'scheduled' ? [meeting] : []
   })
   return {

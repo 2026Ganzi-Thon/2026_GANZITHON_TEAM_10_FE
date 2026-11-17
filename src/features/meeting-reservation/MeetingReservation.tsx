@@ -26,6 +26,7 @@ import {
   loadReservation,
   getMeetingRecommendations,
   meetingSteps,
+  scheduledStartGrace,
   ReservationChangedError,
   ReservationError,
 } from './reservationMock'
@@ -106,7 +107,7 @@ export const MeetingReservation = ({
   const primaryActionRef = useRef<HTMLButtonElement>(null)
   const appliedWasOpenRef = useRef(false)
   const loadedRef = useRef(false)
-  const refreshedAfterGrace = useRef<number | null>(null)
+  const refreshedAtBoundary = useRef<number | null>(null)
   const loading = loadedAttempt !== attempt
   const confirmCancel = cancellationTarget !== null
 
@@ -227,15 +228,10 @@ export const MeetingReservation = ({
   }, [])
 
   useEffect(() => {
-    if (
-      !meeting?.membership ||
-      loading ||
-      loadError ||
-      !isReservationStatusPending(meeting, now) ||
-      refreshedAfterGrace.current === meeting.startAt
-    )
-      return
-    refreshedAfterGrace.current = meeting.startAt
+    if (!meeting || meeting.status !== 'waiting' || loading || loadError) return
+    const boundary = meeting.startAt + (meeting.membership ? scheduledStartGrace : 0)
+    if (now < boundary || refreshedAtBoundary.current === boundary) return
+    refreshedAtBoundary.current = boundary
     setAttempt((value) => value + 1)
   }, [meeting, now, loading, loadError])
 

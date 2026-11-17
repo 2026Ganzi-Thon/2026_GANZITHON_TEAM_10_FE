@@ -103,6 +103,7 @@ const WaitingRoomScreen = ({
   const [pending, setPending] = useState<RoomAction | null>(null)
   const [error, setError] = useState('')
   const request = useRef<AbortController | null>(null)
+  const nicknameBookingRef = useRef<string | undefined>(undefined)
   const entryFailure = useRef(false)
   const wasEntered = useRef(false)
   const listPath = getMeetingListPath(origin?.meetingListSearch)
@@ -352,8 +353,7 @@ const WaitingRoomScreen = ({
   if (
     view === 'waiting' &&
     room.entered &&
-    modal !== 'nickname' &&
-    (!live || room.phase === 'IN_PROGRESS')
+    (live ? room.phase === 'IN_PROGRESS' : modal !== 'nickname')
   ) {
     return <Navigate to={chatPath} replace state={origin} />
   }
@@ -503,6 +503,7 @@ const WaitingRoomScreen = ({
               aria-label="닉네임 수정"
               disabled={Boolean(pending)}
               onClick={() => {
+                nicknameBookingRef.current = bookingId
                 setDraft(room.nickname)
                 setError('')
                 setModal('nickname')
@@ -630,7 +631,7 @@ const WaitingRoomScreen = ({
             label: '저장하기',
             disabled: !draft.trim() || Boolean(pending),
             onClick: () => {
-              void run('rename', bookingId, draft).then((saved) => {
+              void run('rename', nicknameBookingRef.current, draft).then((saved) => {
                 if (saved) setModal(null)
               })
             },

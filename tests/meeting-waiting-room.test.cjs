@@ -121,6 +121,43 @@ test('only an admitted live host with at least two actual participants can start
   await assert.rejects(env.update('leave', withPeer))
 })
 
+test('starting a live room updates other accounts without granting admission or changing their records', async () => {
+  const env = environment()
+  const host = { ...live, membership: 'host' }
+  await env.update('join', host)
+  env.account('moyang:user:b')
+  await env.update('join')
+  await env.update('rename', live, { nickname: '참여자 이름' })
+  const participantRecord = 'moyang:meeting-waiting-room:moyang:user:b:101'
+  const saved = env.values.get(participantRecord)
+  assert.equal(env.read().phase, 'OPEN')
+  await assert.rejects(env.update('start'))
+
+  env.account('moyang:user:a')
+  env.failWrites(true)
+  await assert.rejects(env.update('start', host))
+  env.account('moyang:user:b')
+  assert.equal(env.read().phase, 'OPEN')
+  env.failWrites(false)
+  env.account('moyang:user:a')
+  await env.update('start', host)
+  env.account('moyang:user:b')
+  assert.equal(env.read().phase, 'IN_PROGRESS')
+  assert.equal(env.read().entered, true)
+  assert.equal(env.read().nickname, '참여자 이름')
+  assert.equal(env.values.get(participantRecord), saved)
+  assert.equal(env.mock.applyWaitingRoomStatus(live, openedAt).status, 'in-progress')
+  assert.equal(env.read(live, 'entry-error').phase, 'OPEN')
+  assert.equal(env.read({ ...live, id: '102' }).phase, 'OPEN')
+
+  env.account('moyang:user:new')
+  assert.equal(env.read().entered, false)
+  assert.equal(env.read().canJoin, false)
+  assert.equal(env.mock.applyWaitingRoomStatus(live, openedAt).status, 'in-progress')
+  await assert.rejects(env.update('join'))
+  assert.equal(env.values.has('moyang:meeting-waiting-room:moyang:user:new:101'), false)
+})
+
 test('live departure and host deletion persist without marking the room started', async () => {
   const env = environment()
   await env.update('join')
@@ -132,6 +169,34 @@ test('live departure and host deletion persist without marking the room started'
   await env.update('leave', host)
   assert.equal(env.read(host).phase, 'CANCELED')
   await assert.rejects(env.update('join', host))
+})
+
+test('a live host closure is shared without changing another member’s admission or name', async () => {
+  const env = environment()
+  const host = { ...live, membership: 'host' }
+  await env.update('join', host)
+  env.account('moyang:user:b')
+  await env.update('join')
+  await env.update('rename', live, { nickname: '참여자 이름' })
+  const key = 'moyang:meeting-waiting-room:moyang:user:b:101'
+  const original = env.values.get(key)
+  env.account('moyang:user:a')
+  const results = await Promise.allSettled([env.update('leave', host), env.update('start', host)])
+  assert.equal(results.filter(({ status }) => status === 'fulfilled').length, 1)
+  assert.equal(env.read(host).phase, 'CANCELED')
+  env.account('moyang:user:b')
+  assert.equal(env.read().phase, 'CANCELED')
+  assert.equal(env.read().closedByHost, true)
+  assert.equal(env.read().nickname, '참여자 이름')
+  assert.equal(env.values.get(key), original)
+  assert.equal(
+    env.mock.applyWaitingRoomStatuses({ meetings: [live], myMeetings: [live] }).myMeetings.length,
+    0,
+  )
+  env.account('moyang:user:c')
+  assert.equal(env.read().canJoin, false)
+  assert.equal(env.read({ ...live, id: '102' }).canJoin, true)
+  await assert.rejects(env.update('join'))
 })
 
 for (const [offset, permitted] of [
@@ -294,6 +359,30 @@ test('the shared meeting lookup hides started rooms and retains existing member 
   const data = env.mock.applyWaitingRoomStatuses({ meetings: [host], myMeetings: [] })
   assert.equal(data.myMeetings.length, 1)
   assert.equal(data.myMeetings[0].id, host.id)
+})
+
+test('a list skips only the rooms with corrupt records and preserves their originals', () => {
+  const env = environment()
+  const liveKey = 'moyang:meeting-waiting-room:moyang:user:a:101'
+  const scheduledKey = 'moyang:meeting-waiting-room:moyang:user:a:202'
+  env.values.set(liveKey, '{corrupt')
+  env.values.set(scheduledKey, '{"enteredAt":false}')
+  const intact = { ...live, id: '102', membership: 'host', hasEntered: true }
+  const data = env.mock.applyWaitingRoomStatuses({
+    meetings: [live, intact],
+    myMeetings: [scheduled, intact],
+  })
+  assert.deepEqual(
+    Array.from(data.meetings, ({ id }) => id),
+    ['102'],
+  )
+  assert.deepEqual(
+    Array.from(data.myMeetings, ({ id }) => id),
+    ['102'],
+  )
+  assert.throws(() => env.read(live), /모임 상태를 불러오지 못했어요/)
+  assert.equal(env.values.get(liveKey), '{corrupt')
+  assert.equal(env.values.get(scheduledKey), '{"enteredAt":false}')
 })
 
 test('a canceled reservation cannot recover old admission from its room record', async () => {

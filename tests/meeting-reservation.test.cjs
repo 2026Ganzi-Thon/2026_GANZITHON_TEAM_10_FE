@@ -571,6 +571,28 @@ test('bookings from other preview lists are still visible in My meetings after r
     false,
   )
 })
+
+test('a broken room from another list does not block my other bookings', async () => {
+  const e = environment()
+  e.seed()
+  for (const id of ['208', '215']) await e.reservation.applyForMeeting(id, signal())
+  const scope = e.storage.getMockStorageScope()
+  const badKey = `moyang:meeting-waiting-room:${scope}:208`
+  e.values.set(badKey, '{broken')
+  const data = await e.meetings.loadMeetings({ empty: false, fail: false })
+  const { myMeetings } = e
+    .load('src/features/meeting-waiting-room/waitingRoomMock.ts')
+    .applyWaitingRoomStatuses(data)
+  assert.equal(
+    myMeetings.some(({ id }) => id === '208'),
+    false,
+  )
+  assert.equal(
+    myMeetings.some(({ id }) => id === '215'),
+    true,
+  )
+  assert.equal(e.values.get(badKey), '{broken')
+})
 test('entry is limited to members, exactly five minutes before through two minutes after', async () => {
   const e = environment()
   const booked = e.meetings.getMockMeeting('202')
@@ -592,11 +614,11 @@ test('entry is limited to members, exactly five minutes before through two minut
     false,
   )
 })
-test('new applications close at the exact start, while existing membership is idempotent', async () => {
+test('fixed meeting applications close at the exact start, while existing membership is idempotent', async () => {
   const e = environment()
   e.seed()
-  e.time(e.meetings.getMockMeeting('211').startAt)
-  await code(e.reservation.applyForMeeting('211', signal()), 'started')
+  e.time(e.meetings.getMockMeeting('203').startAt)
+  await code(e.reservation.applyForMeeting('203', signal()), 'started')
   const original = JSON.stringify([...e.values])
   await e.reservation.applyForMeeting('202', signal())
   assert.equal(JSON.stringify([...e.values]), original)
@@ -628,6 +650,7 @@ test('an older cancellation cannot cancel a replacement booking for the same sta
   assert.equal(e.meetings.getMockMeeting('211').bookingId, second.meeting.bookingId)
   assert.equal(e.reflections.getWoolBalance(), 2)
 })
+
 test('malformed reservation data is not reset or overwritten', async () => {
   const e = environment()
   e.seed()
