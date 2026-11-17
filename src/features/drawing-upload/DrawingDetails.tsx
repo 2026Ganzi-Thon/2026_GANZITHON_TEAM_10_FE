@@ -10,12 +10,21 @@ const isValidId = (value: unknown): value is number =>
 
 type UploadedDrawing = { drawingId?: number; activityId?: number; title: string; note: string }
 
+type DetailsFlow = {
+  photo: Blob
+  inputType: 'PHOTO' | 'UPLOAD' | 'CANVAS'
+  draft: { title: string; note: string }
+  onChange: (draft: { title: string; note: string }) => void
+  onBack: () => void
+  onComplete: (draft: { title: string; note: string }) => Promise<void>
+}
+
 // 화면을 떠난 뒤 완료된 업로드도 같은 그림으로 돌아오면 재사용한다.
 const completedUploads = new Map<string, UploadedDrawing>()
 const pendingUploads = new Map<string, Promise<UploadedDrawing>>()
 
 /** 선택한 그림을 확인하고 제목과 떠오른 생각을 입력한다. */
-export const DrawingDetails = () => {
+export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
   const navigate = useNavigate()
   const location = useLocation()
   const data = location.state as {
@@ -26,13 +35,19 @@ export const DrawingDetails = () => {
     draft?: { title: string; note: string }
     draftId?: string
   } | null
-  const photo = data?.photo
-  const uploaded =
-    data?.uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined)
-  const isPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('preview')
+  const photo = flow ? flow.photo : data?.photo
+  const uploaded = flow
+    ? undefined
+    : (data?.uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined))
+  const isPreview =
+    !flow && import.meta.env.DEV && new URLSearchParams(location.search).has('preview')
   const imageRef = useRef<HTMLImageElement>(null)
-  const [title, setTitle] = useState(data?.draft?.title ?? uploaded?.title ?? '')
-  const [thought, setThought] = useState(data?.draft?.note ?? uploaded?.note ?? '')
+  const [title, setTitle] = useState(
+    flow ? flow.draft.title : (data?.draft?.title ?? uploaded?.title ?? ''),
+  )
+  const [thought, setThought] = useState(
+    flow ? flow.draft.note : (data?.draft?.note ?? uploaded?.note ?? ''),
+  )
   const [error, setError] = useState('')
   const invalidUpload =
     !!uploaded && (!isValidId(uploaded.drawingId) || !isValidId(uploaded.activityId))
@@ -59,11 +74,40 @@ export const DrawingDetails = () => {
     return () => URL.revokeObjectURL(url)
   }, [photo])
 
-  if (!(photo instanceof Blob) && !isPreview) return <Navigate to="/drawing/upload" replace />
+  if (!(photo instanceof Blob) && !isPreview) {
+    return flow ? (
+      <p role="alert">선택한 그림을 확인해 주세요.</p>
+    ) : (
+      <Navigate to="/drawing/upload" replace />
+    )
+  }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (submitting.current) return
+    if (flow) {
+      if (!title.trim()) {
+        setError('그림 제목을 입력해 주세요.')
+        return
+      }
+      if (thought.length > 200) {
+        setNotice('떠오른 생각은 200자 이내로 입력해 주세요.')
+        return
+      }
+      submitting.current = true
+      setPending(true)
+      setNotice('')
+      try {
+        await flow.onComplete({ title: title.trim(), note: thought.trim() })
+      } catch {
+        if (active.current)
+          setNotice('그림을 준비하지 못했어요. 입력 내용을 유지한 채 다시 시도해 주세요.')
+      } finally {
+        submitting.current = false
+        if (active.current) setPending(false)
+      }
+      return
+    }
     const currentUpload =
       uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined)
     if (
@@ -178,17 +222,19 @@ export const DrawingDetails = () => {
         title=""
         action="back"
         onNavigate={() =>
-          navigate(
-            `${data?.inputType === 'CANVAS' ? '/drawing/canvas' : '/drawing/upload'}${location.search}`,
-            { state: data },
-          )
+          flow
+            ? flow.onBack()
+            : navigate(
+                `${data?.inputType === 'CANVAS' ? '/drawing/canvas' : '/drawing/upload'}${location.search}`,
+                { state: data },
+              )
         }
       />
       <form className={styles.form} onSubmit={submit} noValidate>
         <img
           ref={imageRef}
           src={isPreview && !(photo instanceof Blob) ? previewImage : undefined}
-          className={`${styles.preview} ${data?.inputType === 'CANVAS' ? styles.canvasPreview : ''}`}
+          className={`${styles.preview} ${(flow ? flow.inputType : data?.inputType) === 'CANVAS' ? styles.canvasPreview : ''}`}
           alt="선택한 그림 미리보기"
         />
         <div className={styles.fields}>
@@ -196,9 +242,11 @@ export const DrawingDetails = () => {
             id="drawing-title"
             label="오늘의 그림 제목"
             value={title}
+            maxLength={flow ? 100 : undefined}
             error={error}
             onChange={(event) => {
               setTitle(event.target.value)
+              flow?.onChange({ title: event.target.value, note: thought })
               setError('')
               if (!invalidUpload) setNotice('')
             }}
@@ -207,8 +255,12 @@ export const DrawingDetails = () => {
             id="drawing-thought"
             label="그림을 그리며 떠오른 생각 (선택)"
             value={thought}
+            maxLength={flow ? 200 : undefined}
             readOnly={Boolean(uploaded)}
-            onChange={(event) => setThought(event.target.value)}
+            onChange={(event) => {
+              setThought(event.target.value)
+              flow?.onChange({ title, note: event.target.value })
+            }}
           />
           {uploaded && (
             <p className={styles.uploadedNote}>업로드한 그림의 생각은 수정할 수 없어요.</p>
@@ -217,7 +269,11 @@ export const DrawingDetails = () => {
         <div className={styles.actions}>
           {notice && <p role="status">{notice}</p>}
           <Button type="submit" disabled={pending || invalidUpload}>
-            {pending ? '그림을 올리고 있어요' : '그림 이야기 시작하기'}
+            {pending
+              ? '그림을 올리고 있어요'
+              : flow
+                ? '그림 공유 준비하기'
+                : '그림 이야기 시작하기'}
           </Button>
         </div>
       </form>

@@ -4,7 +4,14 @@ import { PageHeader } from '@/components'
 import styles from './DrawingCamera.module.css'
 
 /** 카메라 영상을 표시하고 촬영한 사진을 그림 확인 화면으로 전달한다. */
-export const DrawingCamera = () => {
+export const DrawingCamera = ({
+  flow,
+}: {
+  flow?: {
+    onBack: () => void
+    onCapture: (photo: Blob) => void
+  }
+} = {}) => {
   const navigate = useNavigate()
   const { state, search } = useLocation()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -55,6 +62,7 @@ export const DrawingCamera = () => {
   }, [startCamera])
 
   const takePhoto = () => {
+    const captureRequest = requestRef.current
     const video = videoRef.current
     if (!video?.videoWidth || !video.videoHeight || !video.clientWidth || !video.clientHeight)
       return
@@ -83,7 +91,9 @@ export const DrawingCamera = () => {
     )
     canvas.toBlob(
       (photo) => {
-        if (photo)
+        if (captureRequest !== requestRef.current) return
+        if (photo && flow) flow.onCapture(photo)
+        else if (photo)
           navigate(`/drawing/details${search}`, {
             replace: true,
             state: {
@@ -107,7 +117,7 @@ export const DrawingCamera = () => {
       <PageHeader
         title="사진 촬영"
         action="back"
-        onNavigate={() => navigate(`/drawing/upload${search}`, { state })}
+        onNavigate={() => (flow ? flow.onBack() : navigate(`/drawing/upload${search}`, { state }))}
       />
       <div className={styles.content}>
         <h1>그림을 보여주세요</h1>

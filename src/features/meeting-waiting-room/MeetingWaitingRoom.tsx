@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faArrowUp, faLock } from '@fortawesome/free-solid-svg-icons'
 import { Button, Input, Modal, PageHeader, SheepProfile } from '@/components'
+import { MeetingChat } from '@/features/meeting-chat/MeetingChat'
 import { getMeetingEntry, getMeetingListPath } from '@/features/meeting-list/meetingEntry'
 import {
   getMockMeetingFixture,
@@ -11,6 +12,8 @@ import {
 } from '@/features/meeting-list/meetingMock'
 import type { Meeting } from '@/features/meeting-list/meetingMock'
 import { useMockStorageScope } from '@/hooks/useMockStorageScope'
+import { apiClient, getAccessToken } from '@/lib/api-client'
+import { getMockStorageScope } from '@/lib/mock-storage'
 import { autoAdmissionLead, readWaitingRoom, updateWaitingRoom } from './waitingRoomMock'
 import type { RoomAction, WaitingRoom } from './waitingRoomMock'
 import clockIcon from '@/assets/meeting-waiting-room/clock.svg'
@@ -97,9 +100,11 @@ const WaitingRoomScreen = ({
   )
   const [modal, setModal] = useState<'nickname' | 'leave' | null>(null)
   const [draft, setDraft] = useState('')
+  const [profileNickname, setProfileNickname] = useState('')
   const [pending, setPending] = useState<RoomAction | null>(null)
   const [error, setError] = useState('')
   const request = useRef<AbortController | null>(null)
+  const nicknameBookingRef = useRef<string | undefined>(undefined)
   const entryFailure = useRef(false)
   const wasEntered = useRef(false)
   const listPath = getMeetingListPath(origin?.meetingListSearch)
@@ -112,10 +117,35 @@ const WaitingRoomScreen = ({
   try {
     meeting = getMockMeetingFixture(meetingId)
     if (meeting && !scope) throw new Error('로그인 정보를 확인할 수 없어요.')
-    if (meeting && scope) room = readWaitingRoom(meeting, scope, scenario, now, openedAt)
+    if (meeting && scope)
+      room = readWaitingRoom(meeting, scope, scenario, now, openedAt, profileNickname)
   } catch {
     loadError = true
   }
+  const bookingId = meeting?.kind === 'scheduled' ? meeting.bookingId : undefined
+
+  useEffect(() => {
+    const token = getAccessToken()
+    if (!scope || !token) return
+    const controller = new AbortController()
+    void apiClient
+      .get<{ success: boolean; data?: { nickname?: string } }>('/api/users/me', {
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then(({ data }) => {
+        if (
+          !controller.signal.aborted &&
+          getMockStorageScope() === scope &&
+          getAccessToken() === token &&
+          data.success &&
+          typeof data.data?.nickname === 'string'
+        )
+          setProfileNickname(data.data.nickname.trim())
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [scope])
 
   useEffect(() => {
     const refresh = () => setNow(Date.now())
@@ -167,7 +197,7 @@ const WaitingRoomScreen = ({
   }
 
   const run = useCallback(
-    async (action: RoomAction, nickname?: string) => {
+    async (action: RoomAction, expectedBookingId: string | undefined, nickname?: string) => {
       if (request.current || !scope) return false
       const controller = new AbortController()
       request.current = controller
@@ -185,6 +215,7 @@ const WaitingRoomScreen = ({
           signal: controller.signal,
           nickname,
           fail,
+          expectedBookingId,
         })
         if (controller.signal.aborted) return false
         setNow(Date.now())
@@ -231,9 +262,21 @@ const WaitingRoomScreen = ({
       return
     }
     if (!autoJoin || error || pending) return
-    const timer = window.setTimeout(() => void run('join'), 0)
+    const timer = window.setTimeout(() => void run('join', bookingId), 0)
     return () => window.clearTimeout(timer)
-  }, [autoJoin, entered, error, listPath, live, meetingListKey, navigate, pending, phase, run])
+  }, [
+    autoJoin,
+    bookingId,
+    entered,
+    error,
+    listPath,
+    live,
+    meetingListKey,
+    navigate,
+    pending,
+    phase,
+    run,
+  ])
 
   if (loadError) {
     return (
@@ -311,8 +354,7 @@ const WaitingRoomScreen = ({
   if (
     view === 'waiting' &&
     room.entered &&
-    modal !== 'nickname' &&
-    (!live || room.phase === 'IN_PROGRESS')
+    (live ? room.phase === 'IN_PROGRESS' : modal !== 'nickname')
   ) {
     return <Navigate to={chatPath} replace state={origin} />
   }
@@ -339,7 +381,7 @@ const WaitingRoomScreen = ({
           color: 'gray',
           disabled: Boolean(pending),
           onClick: () => {
-            void run('leave').then((left) => {
+            void run('leave', bookingId).then((left) => {
               if (left) {
                 if (live) returnToList()
                 else returnToDetail()
@@ -364,6 +406,18 @@ const WaitingRoomScreen = ({
   )
 
   if (view === 'chat') {
+    if (room.phase === 'IN_PROGRESS' && scope) {
+      return (
+        <MeetingChat
+          meeting={meeting}
+          room={room}
+          scope={scope}
+          scenario={scenario}
+          openedAt={openedAt}
+          onBack={() => navigate(listPath, { replace: true, state: listState })}
+        />
+      )
+    }
     return (
       <>
         <WaitingChat
@@ -462,6 +516,7 @@ const WaitingRoomScreen = ({
               aria-label="닉네임 수정"
               disabled={Boolean(pending)}
               onClick={() => {
+                nicknameBookingRef.current = bookingId
                 setDraft(room.nickname)
                 setError('')
                 setModal('nickname')
@@ -542,7 +597,7 @@ const WaitingRoomScreen = ({
             <>
               <Button
                 disabled={!room.canStart || !room.entered || Boolean(pending)}
-                onClick={() => void run('start')}
+                onClick={() => void run('start', bookingId)}
               >
                 {pending === 'start' ? '시작 중…' : '모임 시작하기'}
               </Button>
@@ -552,7 +607,10 @@ const WaitingRoomScreen = ({
             </>
           )}
           {(meeting.kind === 'scheduled' || (live && !room.entered && showJoinError)) && (
-            <Button disabled={!room.canJoin || Boolean(pending)} onClick={() => void run('join')}>
+            <Button
+              disabled={!room.canJoin || Boolean(pending)}
+              onClick={() => void run('join', bookingId)}
+            >
               {pending === 'join' ? '입장 중…' : showJoinError ? '다시 입장하기' : '모임 입장하기'}
             </Button>
           )}
@@ -586,7 +644,7 @@ const WaitingRoomScreen = ({
             label: '저장하기',
             disabled: !draft.trim() || Boolean(pending),
             onClick: () => {
-              void run('rename', draft).then((saved) => {
+              void run('rename', nicknameBookingRef.current, draft).then((saved) => {
                 if (saved) setModal(null)
               })
             },
@@ -624,18 +682,6 @@ const WaitingChat = ({
   onBack: () => void
   onLeave: () => void
 }) => {
-  if (room.phase === 'IN_PROGRESS') {
-    return (
-      <>
-        <PageHeader title={meeting.title} action="back" onNavigate={onBack} />
-        <section className={styles.notice}>
-          <h2>모임이 시작됐어요</h2>
-          <p>모임 채팅 화면은 준비 중이에요.</p>
-          <Button onClick={onBack}>모임 목록으로 돌아가기</Button>
-        </section>
-      </>
-    )
-  }
   const inGrace = room.startAt !== null && now >= room.startAt
   return (
     <div className={styles.chat}>

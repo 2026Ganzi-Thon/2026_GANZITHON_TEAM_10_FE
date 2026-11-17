@@ -68,8 +68,8 @@ function environment() {
   return {
     mock,
     values,
-    read(meeting = live, scenario = null) {
-      return mock.readWaitingRoom(meeting, scope, scenario, now, openedAt)
+    read(meeting = live, scenario = null, profileNickname) {
+      return mock.readWaitingRoom(meeting, scope, scenario, now, openedAt, profileNickname)
     },
     update(action, meeting = live, options = {}) {
       return mock.updateWaitingRoom({
@@ -77,6 +77,7 @@ function environment() {
         scope,
         scenario: null,
         openedAt,
+        expectedBookingId: meeting.bookingId,
         action,
         signal: new AbortController().signal,
         ...options,
@@ -120,6 +121,43 @@ test('only an admitted live host with at least two actual participants can start
   await assert.rejects(env.update('leave', withPeer))
 })
 
+test('starting a live room updates other accounts without granting admission or changing their records', async () => {
+  const env = environment()
+  const host = { ...live, membership: 'host' }
+  await env.update('join', host)
+  env.account('moyang:user:b')
+  await env.update('join')
+  await env.update('rename', live, { nickname: '참여자 이름' })
+  const participantRecord = 'moyang:meeting-waiting-room:moyang:user:b:101'
+  const saved = env.values.get(participantRecord)
+  assert.equal(env.read().phase, 'OPEN')
+  await assert.rejects(env.update('start'))
+
+  env.account('moyang:user:a')
+  env.failWrites(true)
+  await assert.rejects(env.update('start', host))
+  env.account('moyang:user:b')
+  assert.equal(env.read().phase, 'OPEN')
+  env.failWrites(false)
+  env.account('moyang:user:a')
+  await env.update('start', host)
+  env.account('moyang:user:b')
+  assert.equal(env.read().phase, 'IN_PROGRESS')
+  assert.equal(env.read().entered, true)
+  assert.equal(env.read().nickname, '참여자 이름')
+  assert.equal(env.values.get(participantRecord), saved)
+  assert.equal(env.mock.applyWaitingRoomStatus(live, openedAt).status, 'in-progress')
+  assert.equal(env.read(live, 'entry-error').phase, 'OPEN')
+  assert.equal(env.read({ ...live, id: '102' }).phase, 'OPEN')
+
+  env.account('moyang:user:new')
+  assert.equal(env.read().entered, false)
+  assert.equal(env.read().canJoin, false)
+  assert.equal(env.mock.applyWaitingRoomStatus(live, openedAt).status, 'in-progress')
+  await assert.rejects(env.update('join'))
+  assert.equal(env.values.has('moyang:meeting-waiting-room:moyang:user:new:101'), false)
+})
+
 test('live departure and host deletion persist without marking the room started', async () => {
   const env = environment()
   await env.update('join')
@@ -131,6 +169,34 @@ test('live departure and host deletion persist without marking the room started'
   await env.update('leave', host)
   assert.equal(env.read(host).phase, 'CANCELED')
   await assert.rejects(env.update('join', host))
+})
+
+test('a live host closure is shared without changing another member’s admission or name', async () => {
+  const env = environment()
+  const host = { ...live, membership: 'host' }
+  await env.update('join', host)
+  env.account('moyang:user:b')
+  await env.update('join')
+  await env.update('rename', live, { nickname: '참여자 이름' })
+  const key = 'moyang:meeting-waiting-room:moyang:user:b:101'
+  const original = env.values.get(key)
+  env.account('moyang:user:a')
+  const results = await Promise.allSettled([env.update('leave', host), env.update('start', host)])
+  assert.equal(results.filter(({ status }) => status === 'fulfilled').length, 1)
+  assert.equal(env.read(host).phase, 'CANCELED')
+  env.account('moyang:user:b')
+  assert.equal(env.read().phase, 'CANCELED')
+  assert.equal(env.read().closedByHost, true)
+  assert.equal(env.read().nickname, '참여자 이름')
+  assert.equal(env.values.get(key), original)
+  assert.equal(
+    env.mock.applyWaitingRoomStatuses({ meetings: [live], myMeetings: [live] }).myMeetings.length,
+    0,
+  )
+  env.account('moyang:user:c')
+  assert.equal(env.read().canJoin, false)
+  assert.equal(env.read({ ...live, id: '102' }).canJoin, true)
+  await assert.rejects(env.update('join'))
 })
 
 for (const [offset, permitted] of [
@@ -154,6 +220,61 @@ test('a reservation alone is not an actual attendee and nonmembers cannot enter'
   const noBooking = { ...scheduled, membership: undefined }
   await assert.rejects(env.update('join', noBooking))
   assert.equal(env.values.size, 0)
+})
+
+test('a reserved room without visits keeps the same state in detail and waiting at the grace deadline', () => {
+  const env = environment()
+  const deadline = scheduled.startAt + 120_000
+  env.time(deadline - 1)
+  assert.equal(env.mock.applyWaitingRoomStatus(scheduled, deadline - 1).status, 'waiting')
+  assert.equal(env.read(scheduled).phase, 'OPEN')
+  env.time(deadline)
+  assert.equal(env.mock.applyWaitingRoomStatus(scheduled, deadline).status, 'cancelled')
+  assert.equal(env.read(scheduled).phase, 'CANCELED')
+  assert.equal(env.values.size, 0)
+})
+
+test('rebooking for the same start never inherits a previous admission or a delayed room action', async () => {
+  const env = environment()
+  const first = { ...scheduled, bookingId: 'first' }
+  const next = { ...scheduled, bookingId: 'next' }
+  await env.update('join', first)
+  assert.equal(env.read(first).entered, true)
+  assert.equal(env.read(next).entered, false)
+  assert.equal(env.mock.applyWaitingRoomStatus(next, openedAt).hasEntered, false)
+  const original = [...env.values.values()][0]
+  await assert.rejects(env.update('join', first, { loadMeeting: () => next }), /예약이 변경/)
+  assert.equal([...env.values.values()][0], original)
+  await env.update('join', next)
+  assert.equal(env.read(next).entered, true)
+})
+
+test('the profile name is the initial nickname and a room nickname edit takes precedence', async () => {
+  const env = environment()
+  await env.update('join', live)
+  assert.equal(
+    env.read(live, null, ' 첫 계정 ').participants.find(({ id }) => id === 'me').nickname,
+    '첫 계정',
+  )
+  await env.update('rename', live, { nickname: '이 방에서 쓸 이름' })
+  assert.equal(env.read(live, null, '업데이트한 이름').nickname, '이 방에서 쓸 이름')
+  env.account('moyang:user:b')
+  await env.update('join', live)
+  assert.equal(env.read(live, null, '두 번째 계정').nickname, '두 번째 계정')
+})
+
+test('legacy default names fall back to the profile while explicit room names survive', async () => {
+  const env = environment()
+  await env.update('join', live)
+  const key = [...env.values.keys()][0]
+  const record = JSON.parse(env.values.get(key))
+  env.values.set(key, JSON.stringify({ ...record, nickname: '딸기를 좋아하는 양' }))
+  assert.equal(env.read(live, null, '프로필 이름').nickname, '프로필 이름')
+  assert.equal(env.read(live).nickname, '딸기를 좋아하는 양')
+  env.values.set(key, JSON.stringify({ ...record, nickname: '이전 직접 설정 이름' }))
+  assert.equal(env.read(live, null, '프로필 이름').nickname, '이전 직접 설정 이름')
+  await env.update('rename', live, { nickname: '딸기를 좋아하는 양' })
+  assert.equal(env.read(live, null, '프로필 이름').nickname, '딸기를 좋아하는 양')
 })
 
 test('two scheduled attendees can start without a host and a late host remains unadmitted', () => {
@@ -238,6 +359,30 @@ test('the shared meeting lookup hides started rooms and retains existing member 
   const data = env.mock.applyWaitingRoomStatuses({ meetings: [host], myMeetings: [] })
   assert.equal(data.myMeetings.length, 1)
   assert.equal(data.myMeetings[0].id, host.id)
+})
+
+test('a list skips only the rooms with corrupt records and preserves their originals', () => {
+  const env = environment()
+  const liveKey = 'moyang:meeting-waiting-room:moyang:user:a:101'
+  const scheduledKey = 'moyang:meeting-waiting-room:moyang:user:a:202'
+  env.values.set(liveKey, '{corrupt')
+  env.values.set(scheduledKey, '{"enteredAt":false}')
+  const intact = { ...live, id: '102', membership: 'host', hasEntered: true }
+  const data = env.mock.applyWaitingRoomStatuses({
+    meetings: [live, intact],
+    myMeetings: [scheduled, intact],
+  })
+  assert.deepEqual(
+    Array.from(data.meetings, ({ id }) => id),
+    ['102'],
+  )
+  assert.deepEqual(
+    Array.from(data.myMeetings, ({ id }) => id),
+    ['102'],
+  )
+  assert.throws(() => env.read(live), /모임 상태를 불러오지 못했어요/)
+  assert.equal(env.values.get(liveKey), '{corrupt')
+  assert.equal(env.values.get(scheduledKey), '{"enteredAt":false}')
 })
 
 test('a canceled reservation cannot recover old admission from its room record', async () => {
@@ -491,4 +636,14 @@ test('a blank saved nickname is not silently accepted or overwritten', async () 
   assert.throws(() => env.read(), /모임 상태/)
   await assert.rejects(env.update('join'))
   assert.equal(env.values.get(key), invalid)
+})
+
+test('a resolved nickname is distinguished from a temporary fallback, even when both have the same text', async () => {
+  const env = environment()
+  await env.update('join', live)
+  assert.equal(env.read().nicknameReady, false)
+  assert.equal(env.read(live, null, '딸기를 좋아하는 양').nicknameReady, true)
+  await env.update('rename', live, { nickname: '딸기를 좋아하는 양' })
+  assert.equal(env.read().nicknameReady, true)
+  assert.equal(env.read(live, null, '다른 프로필 이름').nickname, '딸기를 좋아하는 양')
 })

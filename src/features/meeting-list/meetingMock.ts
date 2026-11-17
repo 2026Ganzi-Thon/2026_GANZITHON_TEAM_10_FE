@@ -35,11 +35,14 @@ export type LiveMeeting = MeetingInfo & { kind: 'live' }
 export type ScheduledMeeting = MeetingInfo & {
   kind: 'scheduled'
   startAt: number
+  bookingId?: string
 }
 export type Meeting = LiveMeeting | ScheduledMeeting
 export type PastMeeting = Pick<MeetingInfo, 'id' | 'title' | 'concern'> & {
   startAt: number
   endAt: number
+  hasChatHistory?: boolean
+  hasDrawing?: boolean
 }
 
 export const pastConversationDuration = 24 * 60 * 60 * 1000
@@ -52,7 +55,8 @@ export type MeetingListData = {
 
 const day = 86_400_000
 const now = Date.now()
-const kstDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(now)
+const kstDateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' })
+const kstDate = kstDateFormat.format(now)
 const atKst = (time: string, daysAhead: number) =>
   Date.parse(kstDate + 'T' + time + '+09:00') + daysAhead * day
 
@@ -240,17 +244,41 @@ const pastMeetings: PastMeeting[] = [
   },
 ]
 
+const recurringMockMeetingIds = new Set(['201', '202', '211', '208', '209', '210', '217'])
+
+const getAvailableMockStartAt = (meeting: ScheduledMeeting, previousStartAt?: number) => {
+  const current = Date.now()
+  if (previousStartAt !== undefined && previousStartAt > current) return previousStartAt
+  if (meeting.startAt > current || !recurringMockMeetingIds.has(meeting.id)) return meeting.startAt
+  const today = Date.parse(kstDateFormat.format(current) + 'T00:00:00+09:00')
+  const fixtureDay = atKst('00:00:00', 0)
+  return meeting.startAt + today - fixtureDay
+}
+
 const applyReservation = (
   meeting: Meeting,
   reservations: Record<string, MockMeetingReservation> = {},
 ): Meeting => {
   const reservation = reservations[meeting.id]
   if (meeting.kind !== 'scheduled') return meeting
-  if (!reservation) return { ...meeting, woolPaid: false }
+  if (!reservation) {
+    return {
+      ...meeting,
+      startAt:
+        meeting.status === 'waiting' && !meeting.membership
+          ? getAvailableMockStartAt(meeting)
+          : meeting.startAt,
+      woolPaid: false,
+    }
+  }
   return {
     ...meeting,
-    startAt: reservation.startAt,
+    startAt:
+      reservation.joined || reservation.cancelled
+        ? reservation.startAt
+        : getAvailableMockStartAt(meeting, reservation.startAt),
     membership: reservation.joined ? (reservation.isHost ? 'host' : 'participant') : undefined,
+    bookingId: reservation.joined ? reservation.bookingId : undefined,
     participants: Math.max(0, meeting.participants + reservation.participantDelta),
     status: reservation.cancelled ? 'cancelled' : meeting.status,
     woolPaid: reservation.joined && reservation.woolChange < 0,
@@ -308,7 +336,7 @@ export const loadMeetings = async ({
   const visibleIds = new Set(visibleMeetings.map(({ id }) => id))
   const otherReservations = Object.entries(reservations).flatMap(([id, reservation]) => {
     if (!reservation.joined || visibleIds.has(id)) return []
-    const meeting = getMockMeeting(id, reservations)
+    const meeting = getMockMeetingFixture(id, reservations)
     return meeting?.kind === 'scheduled' ? [meeting] : []
   })
   return {

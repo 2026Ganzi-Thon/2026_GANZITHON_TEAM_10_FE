@@ -11,15 +11,26 @@ import styles from './DrawingCanvas.module.css'
 const colors = ['#252525', '#599468', '#4c8cde', '#e56769', '#f2bc4b']
 const sizes = [1, 3, 6, 10]
 
+type CanvasFlow = {
+  topic: { title: string; description: string }
+  paths: CanvasPath[]
+  onChange: (paths: CanvasPath[]) => void
+  onBack: () => void
+  onComplete: (photo: Blob, paths: CanvasPath[]) => Promise<void>
+}
+
 /** 웹 그림 화면의 캔버스와 그리기 도구를 표시한다. */
-export const DrawingCanvas = () => {
+export const DrawingCanvas = ({ flow }: { flow?: CanvasFlow } = {}) => {
   const navigate = useNavigate()
   const { search, state } = useLocation()
   const drawingState = state as {
     topic?: { title: string; description: string }
     paths?: CanvasPath[]
   } | null
-  const topic = drawingState?.topic
+  const topic = flow ? flow.topic : drawingState?.topic
+  const [flowPaths] = useState(flow?.paths)
+  const restoringFlow = useRef(Boolean(flow?.paths.length))
+  const initialPaths = flow ? flowPaths : drawingState?.paths
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
   const [color, setColor] = useState(colors[0])
   const [size, setSize] = useState(3)
@@ -28,15 +39,25 @@ export const DrawingCanvas = () => {
   const canvasRef = useRef<ReactSketchCanvasRef>(null)
   const [hasDrawing, setHasDrawing] = useState(false)
   const [exportError, setExportError] = useState('')
+  const exporting = useRef(false)
+  const active = useRef(true)
 
   useEffect(() => {
-    if (!drawingState?.paths?.length) return
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!initialPaths?.length) return
     canvasRef.current?.resetCanvas()
-    canvasRef.current?.loadPaths(drawingState.paths)
-  }, [drawingState?.paths])
+    canvasRef.current?.loadPaths(initialPaths)
+  }, [initialPaths])
 
   const finishDrawing = async () => {
-    if (!canvasRef.current) return
+    if (!canvasRef.current || exporting.current) return
+    exporting.current = true
     try {
       const [image, paths] = await Promise.all([
         canvasRef.current.exportImage('png'),
@@ -46,6 +67,11 @@ export const DrawingCanvas = () => {
         character.charCodeAt(0),
       )
       const photo = new Blob([bytes], { type: 'image/png' })
+      if (!active.current) return
+      if (flow) {
+        await flow.onComplete(photo, paths)
+        return
+      }
       navigate(`/drawing/details${search}`, {
         state: {
           ...state,
@@ -58,7 +84,9 @@ export const DrawingCanvas = () => {
         },
       })
     } catch {
-      setExportError('그림을 준비하지 못했어요. 다시 시도해 주세요.')
+      if (active.current) setExportError('그림을 준비하지 못했어요. 다시 시도해 주세요.')
+    } finally {
+      exporting.current = false
     }
   }
 
@@ -83,10 +111,12 @@ export const DrawingCanvas = () => {
           type="button"
           aria-label="뒤로 가기"
           onClick={() =>
-            navigate(
-              `/drawing/onboarding/3?type=canvas${new URLSearchParams(search).has('preview') ? '&preview' : ''}`,
-              { state },
-            )
+            flow
+              ? flow.onBack()
+              : navigate(
+                  `/drawing/onboarding/3?type=canvas${new URLSearchParams(search).has('preview') ? '&preview' : ''}`,
+                  { state },
+                )
           }
         >
           <FontAwesomeIcon icon={faArrowLeft} />
@@ -117,7 +147,12 @@ export const DrawingCanvas = () => {
             strokeWidth={size}
             eraserWidth={size * 3}
             canvasColor="white"
-            onChange={(paths) => setHasDrawing(paths.some((path) => path.drawMode))}
+            onChange={(paths) => {
+              setHasDrawing(paths.some((path) => path.drawMode))
+              if (restoringFlow.current && paths.length === 0) return
+              restoringFlow.current = false
+              flow?.onChange(paths)
+            }}
           />
         </div>
         {exportError && <p role="alert">{exportError}</p>}

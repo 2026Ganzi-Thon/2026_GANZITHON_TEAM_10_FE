@@ -8,7 +8,10 @@ import {
   useSearchParams,
 } from 'react-router-dom'
 import { Button, Modal } from '@/components'
+import { scheduledStartGrace } from '@/features/meeting-reservation/reservationMock'
 import { applyWaitingRoomStatuses } from '@/features/meeting-waiting-room/waitingRoomMock'
+import { applyMeetingChatHistory } from '@/features/meeting-chat/chatHistory'
+import { isMeetingChatStorageEvent } from '@/features/meeting-chat/chatMock'
 import arrowIcon from '@/assets/meetings/arrow.svg'
 import attendeesIcon from '@/assets/meetings/attendees.svg'
 import attendeesSmallIcon from '@/assets/meetings/attendees-small.svg'
@@ -44,12 +47,14 @@ const tabs = [
 ] as const
 
 const loadMeetingList = (options: Parameters<typeof loadMeetings>[0]) =>
-  loadMeetings(options).then(applyWaitingRoomStatuses)
+  loadMeetings(options)
+    .then(applyWaitingRoomStatuses)
+    .then((data) => (options.empty ? data : applyMeetingChatHistory(data)))
 
 const returnPositionKey = 'moyang:meeting-list-return'
 const visibleMeetingCount = 3
 
-type SectionName = 'live' | 'scheduled' | 'past' | 'guide'
+type SectionName = 'live' | 'scheduled' | 'owned' | 'reserved' | 'joinedLive' | 'past' | 'guide'
 type ExpandedSections = Partial<Record<SectionName, boolean>>
 type ShowNotice = (notice: MeetingNotice) => void
 
@@ -57,6 +62,7 @@ type ReturnPosition = {
   key: string
   search: string
   meetingId?: string
+  meetingAction?: string
   scrollTop: number
   pastExpanded?: boolean
   expandedSections?: ExpandedSections
@@ -262,7 +268,6 @@ type MeetingSectionProps = {
   description?: string
   meetings: Meeting[]
   concern?: MeetingConcern
-  role?: '방장' | '참여자'
   emptyMessage?: string
   expanded?: boolean
   onToggle?: () => void
@@ -274,7 +279,6 @@ const MeetingSection = ({
   description,
   meetings,
   concern,
-  role,
   emptyMessage,
   expanded = false,
   onToggle,
@@ -289,7 +293,6 @@ const MeetingSection = ({
     <section className={styles.section}>
       <div className={styles.sectionHeading}>
         <h2 className={description ? styles.withDescription : undefined}>{title}</h2>
-        {role && <span className={styles.role}>{role}</span>}
         {canToggle && (
           <SectionToggle
             title={title}
@@ -336,6 +339,15 @@ const PastMeetingsSection = ({
   onToggle: () => void
 }) => {
   const [now, setNow] = useState(Date.now)
+  const { key, search } = useLocation()
+  const navigate = useNavigate()
+  const openHistory = (meeting: PastMeeting, drawing: boolean) =>
+    navigate(
+      `/meetings/${encodeURIComponent(meeting.id)}/history${drawing ? '?view=drawing' : ''}`,
+      {
+        state: { fromMeetingList: true, meetingListSearch: search, meetingListKey: key },
+      },
+    )
 
   useEffect(() => {
     const nextExpiry = meetings
@@ -387,11 +399,23 @@ const PastMeetingsSection = ({
                   {getConcernLabel(meeting.concern)}
                 </p>
                 <div className={styles.pastActions}>
-                  <button type="button" disabled>
+                  <button
+                    type="button"
+                    data-meeting-id={meeting.id}
+                    data-meeting-action="drawing"
+                    disabled={!meeting.hasChatHistory || !meeting.hasDrawing}
+                    onClick={() => openHistory(meeting, true)}
+                  >
                     <span>내가 그린 그림 확인하기</span>
                   </button>
                   {now < meeting.endAt + pastConversationDuration && (
-                    <button type="button" disabled>
+                    <button
+                      type="button"
+                      data-meeting-id={meeting.id}
+                      data-meeting-action="history"
+                      disabled={!meeting.hasChatHistory}
+                      onClick={() => openHistory(meeting, false)}
+                    >
                       <span>지난 대화 보기</span>
                     </button>
                   )}
@@ -413,6 +437,7 @@ export const MeetingList = () => {
   const pageRef = useRef<HTMLDivElement>(null)
   const filtersRef = useRef<HTMLDivElement>(null)
   const returnMeetingRef = useRef<string | undefined>(undefined)
+  const returnActionRef = useRef<string | undefined>(undefined)
   const noticePositionRef = useRef<ReturnPosition | undefined>(undefined)
   const { key, search, state } = useLocation()
   const originKey = typeof state?.meetingListKey === 'string' ? state.meetingListKey : undefined
@@ -490,7 +515,8 @@ export const MeetingList = () => {
 
   useEffect(() => {
     const refresh = (event: StorageEvent) => {
-      if (isMeetingStorageEvent(event)) setAttempt((value) => value + 1)
+      if (isMeetingStorageEvent(event) || isMeetingChatStorageEvent(event.key))
+        setAttempt((value) => value + 1)
     }
     window.addEventListener('storage', refresh)
     return () => window.removeEventListener('storage', refresh)
@@ -498,16 +524,18 @@ export const MeetingList = () => {
 
   useEffect(() => {
     if (!list || list === 'error') return
-    const nextStart = list.meetings.reduce(
-      (next, meeting) =>
-        meeting.kind === 'scheduled' && meeting.status === 'waiting' && meeting.startAt > now
-          ? Math.min(next, meeting.startAt)
-          : next,
-      Infinity,
-    )
+    const nextStart = [...list.meetings, ...list.myMeetings].reduce((next, meeting) => {
+      if (meeting.kind !== 'scheduled' || meeting.status !== 'waiting') return next
+      if (meeting.startAt > now) return Math.min(next, meeting.startAt)
+      const deadline = meeting.startAt + scheduledStartGrace
+      return meeting.membership && deadline > now ? Math.min(next, deadline) : next
+    }, Infinity)
     if (!Number.isFinite(nextStart)) return
     const timer = window.setTimeout(
-      () => setNow(Date.now()),
+      () => {
+        setNow(Date.now())
+        setAttempt((value) => value + 1)
+      },
       Math.min(Math.max(0, nextStart - Date.now()), 2_147_483_647),
     )
     return () => window.clearTimeout(timer)
@@ -528,8 +556,8 @@ export const MeetingList = () => {
     const position = noticePositionRef.current ?? readReturnPosition(originKey ?? key, search)
     if (!position) return
     const link = position.meetingId
-      ? pageRef.current?.querySelector<HTMLAnchorElement>(
-          `a[data-meeting-id="${CSS.escape(position.meetingId)}"]`,
+      ? pageRef.current?.querySelector<HTMLElement>(
+          `[data-meeting-id="${CSS.escape(position.meetingId)}"]${position.meetingAction ? `[data-meeting-action="${CSS.escape(position.meetingAction)}"]` : ''}`,
         )
       : undefined
     const target =
@@ -545,11 +573,13 @@ export const MeetingList = () => {
     if (!list || list === 'error') return
     const scroller = pageRef.current?.parentElement
     returnMeetingRef.current = undefined
+    returnActionRef.current = undefined
     const savePosition = () => {
       const position: ReturnPosition = {
         key,
         search,
         meetingId: returnMeetingRef.current,
+        meetingAction: returnActionRef.current,
         scrollTop: scroller?.scrollTop ?? 0,
         expandedSections,
       }
@@ -595,8 +625,9 @@ export const MeetingList = () => {
     ) {
       return
     }
-    returnMeetingRef.current =
-      event.target.closest<HTMLAnchorElement>('a[data-meeting-id]')?.dataset.meetingId
+    const target = event.target.closest<HTMLElement>('[data-meeting-id]')
+    returnMeetingRef.current = target?.dataset.meetingId
+    returnActionRef.current = target?.dataset.meetingAction
   }
 
   const changeConcern = (id?: MeetingConcern) => {
@@ -754,28 +785,31 @@ export const MeetingList = () => {
             <>
               <MeetingSection
                 title="내가 만든 모임"
-                role="방장"
                 emptyMessage="만든 모임이 아직 없어요"
                 meetings={myMeetings.filter(({ membership }) => membership === 'host')}
                 concern={concern}
+                expanded={expandedSections.owned === true}
+                onToggle={() => toggleSection('owned')}
                 onNotice={setActiveNotice}
               />
               <MeetingSection
                 title="예약한 모임"
-                role="참여자"
                 emptyMessage="예약한 모임이 아직 없어요"
                 meetings={myMeetings.filter(
                   ({ kind, membership }) => kind === 'scheduled' && membership === 'participant',
                 )}
                 concern={concern}
+                expanded={expandedSections.reserved === true}
+                onToggle={() => toggleSection('reserved')}
                 onNotice={setActiveNotice}
               />
               {joinedLiveMeetings.length > 0 && (
                 <MeetingSection
                   title="참여 중인 실시간 모임"
-                  role="참여자"
                   meetings={joinedLiveMeetings}
                   concern={concern}
+                  expanded={expandedSections.joinedLive === true}
+                  onToggle={() => toggleSection('joinedLive')}
                   onNotice={setActiveNotice}
                 />
               )}

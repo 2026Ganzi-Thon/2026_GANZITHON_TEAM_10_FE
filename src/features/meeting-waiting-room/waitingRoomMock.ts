@@ -5,6 +5,7 @@ const admissionLead = 5 * 60_000
 export const autoAdmissionLead = 60_000
 const startGrace = 2 * 60_000
 const storagePrefix = 'moyang:meeting-waiting-room:'
+const liveStatePrefix = 'moyang:meeting-live-start:'
 const sheepColors = ['purple', 'white', 'pink', 'green', 'blue', 'white'] as const
 const nicknames = [
   '딸기를 좋아하는 양',
@@ -14,7 +15,6 @@ const nicknames = [
   '하늘을 좋아하는 양',
   '별을 좋아하는 양',
 ]
-
 export type RoomParticipant = {
   id: string
   nickname: string
@@ -25,7 +25,9 @@ export type RoomParticipant = {
 type RoomRecord = {
   createdAt: number
   startAt: number | null
-  nickname: string
+  bookingId?: string
+  nickname: string | null
+  nicknameEdited?: true
   enteredAt: number | null
   liveStarted: boolean
   closed: boolean
@@ -34,10 +36,28 @@ type RoomRecord = {
 export type RoomAction = 'join' | 'start' | 'leave' | 'rename'
 
 export const isWaitingRoomStorageEvent = (key: string | null) =>
-  key === null || key.startsWith(storagePrefix)
+  key === null || key.startsWith(storagePrefix) || key.startsWith(liveStatePrefix)
 
 const roomKey = (scope: string, id: string, scenario: string | null) =>
   `${storagePrefix}${scope}:${id}${scenario ? `:${scenario}` : ''}`
+
+const liveStateKey = (id: string, scenario: string | null) =>
+  `${liveStatePrefix}${JSON.stringify([id, scenario])}`
+
+type LiveState = 'started' | 'closed'
+
+class InvalidWaitingRoomRecord extends Error {
+  constructor() {
+    super('모임 상태를 불러오지 못했어요.')
+  }
+}
+
+const readLiveState = (id: string, scenario: string | null): LiveState | null => {
+  const saved = localStorage.getItem(liveStateKey(id, scenario))
+  if (saved === 'started' || saved === 'closed') return saved
+  if (saved === null) return null
+  throw new InvalidWaitingRoomRecord()
+}
 
 const isTimestamp = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && Number.isFinite(new Date(value).getTime())
@@ -45,19 +65,36 @@ const isTimestamp = (value: unknown): value is number =>
 const readRecord = (key: string, kind: Meeting['kind']) => {
   const saved = localStorage.getItem(key)
   if (saved === null) return null
-  const record = JSON.parse(saved) as RoomRecord | null
+  let record: RoomRecord | null
+  try {
+    record = JSON.parse(saved)
+  } catch {
+    throw new InvalidWaitingRoomRecord()
+  }
   if (
     !record ||
     !isTimestamp(record.createdAt) ||
     (kind === 'live' ? record.startAt !== null : !isTimestamp(record.startAt)) ||
-    typeof record.nickname !== 'string' ||
-    !record.nickname.trim() ||
+    (record.bookingId !== undefined &&
+      (typeof record.bookingId !== 'string' || !record.bookingId.trim())) ||
+    !(
+      record.nickname === null ||
+      (typeof record.nickname === 'string' && record.nickname.trim())
+    ) ||
+    (record.nicknameEdited !== undefined && record.nicknameEdited !== true) ||
     !(record.enteredAt === null || isTimestamp(record.enteredAt)) ||
     typeof record.liveStarted !== 'boolean' ||
     typeof record.closed !== 'boolean'
   ) {
-    throw new Error('모임 상태를 불러오지 못했어요.')
+    throw new InvalidWaitingRoomRecord()
   }
+  return record
+}
+
+const readCurrentRecord = (key: string, meeting: Meeting) => {
+  if (meeting.kind === 'scheduled' && !meeting.membership) return null
+  const record = readRecord(key, meeting.kind)
+  if (meeting.kind === 'scheduled' && record?.bookingId !== meeting.bookingId) return null
   return record
 }
 
@@ -74,7 +111,8 @@ const makeRecord = (meeting: Meeting, now: number, scenario: string | null): Roo
   return {
     createdAt: now,
     startAt,
-    nickname: nicknames[0],
+    bookingId: meeting.kind === 'scheduled' ? meeting.bookingId : undefined,
+    nickname: null,
     enteredAt: meeting.hasEntered ? now : null,
     liveStarted: false,
     closed: false,
@@ -82,6 +120,7 @@ const makeRecord = (meeting: Meeting, now: number, scenario: string | null): Roo
 }
 
 const peerCount = (meeting: Meeting, scenario: string | null) => {
+  if (scenario === 'chat-six' && meeting.capacity === 6) return 5
   if (meeting.kind === 'scheduled') {
     if (scenario === 'host-absent') return 2
     if (scenario === 'scheduled-start' || scenario === 'grace-start') return 1
@@ -100,8 +139,17 @@ const peerCount = (meeting: Meeting, scenario: string | null) => {
   return Math.max(0, meeting.participants - Number(Boolean(meeting.hasEntered)))
 }
 
-const getRoom = (meeting: Meeting, record: RoomRecord, now: number, scenario: string | null) => {
-  const { startAt, enteredAt, nickname } = record
+const getRoom = (
+  meeting: Meeting,
+  record: RoomRecord,
+  now: number,
+  scenario: string | null,
+  profileNickname?: string,
+) => {
+  const { startAt, enteredAt } = record
+  const savedNickname =
+    !record.nicknameEdited && record.nickname === nicknames[0] ? null : record.nickname
+  const nickname = savedNickname ?? (profileNickname?.trim() || nicknames[0])
   const isHost = meeting.membership === 'host'
   const peers = Array.from({ length: peerCount(meeting, scenario) }, (_, index) => ({
     id: `participant-${index + 1}`,
@@ -131,15 +179,20 @@ const getRoom = (meeting: Meeting, record: RoomRecord, now: number, scenario: st
       ? Math.max(startAt, secondEntry)
       : null
   const present = participants.filter((participant) => participant.enteredAt <= now)
+  const liveState = meeting.kind === 'live' ? readLiveState(meeting.id, scenario) : null
+  const closedByHost = record.closed || liveState === 'closed'
   const started =
-    meeting.status === 'in-progress' || record.liveStarted || (startsAt !== null && now >= startsAt)
+    meeting.status === 'in-progress' ||
+    record.liveStarted ||
+    liveState === 'started' ||
+    (startsAt !== null && now >= startsAt)
   const autoCancelled =
     meeting.status !== 'cancelled' &&
-    !record.closed &&
+    !closedByHost &&
     !started &&
     deadline !== null &&
     now >= deadline
-  const cancelled = autoCancelled || record.closed || meeting.status === 'cancelled'
+  const cancelled = autoCancelled || closedByHost || meeting.status === 'cancelled'
   const phase = cancelled
     ? 'CANCELED'
     : started
@@ -172,11 +225,12 @@ const getRoom = (meeting: Meeting, record: RoomRecord, now: number, scenario: st
     participants: present,
     entered: enteredAt !== null,
     nickname,
+    nicknameReady: savedNickname !== null || Boolean(profileNickname?.trim()),
     isHost,
     canJoin,
     canStart,
     autoCancelled,
-    closedByHost: record.closed,
+    closedByHost,
     refundableWool,
   } as const
 }
@@ -187,11 +241,12 @@ export const readWaitingRoom = (
   scenario: string | null,
   now: number,
   openedAt: number,
+  profileNickname?: string,
 ) => {
   const record =
-    readRecord(roomKey(scope, meeting.id, scenario), meeting.kind) ??
+    readCurrentRecord(roomKey(scope, meeting.id, scenario), meeting) ??
     makeRecord(meeting, openedAt, scenario)
-  return getRoom(meeting, record, now, scenario)
+  return getRoom(meeting, record, now, scenario, profileNickname)
 }
 
 export type WaitingRoom = ReturnType<typeof readWaitingRoom>
@@ -199,9 +254,10 @@ export type WaitingRoom = ReturnType<typeof readWaitingRoom>
 export const applyWaitingRoomStatus = (meeting: Meeting, now: number): Meeting => {
   const scope = getMockStorageScope()
   if (!scope || (meeting.kind === 'scheduled' && !meeting.membership)) return meeting
-  const record = readRecord(roomKey(scope, meeting.id, null), meeting.kind)
-  if (!record) return meeting
-  const room = getRoom(meeting, record, now, null)
+  const stored = readCurrentRecord(roomKey(scope, meeting.id, null), meeting)
+  if (!stored && meeting.status !== 'waiting') return meeting
+  const room = getRoom(meeting, stored ?? makeRecord(meeting, now, null), now, null)
+  if (!stored && meeting.kind === 'live' && room.phase === 'OPEN') return meeting
   const status =
     room.phase === 'CANCELED'
       ? 'cancelled'
@@ -222,14 +278,24 @@ export const applyWaitingRoomStatuses = <T extends { meetings: Meeting[]; myMeet
   data: T,
 ): T => {
   const now = Date.now()
-  const meetings = data.meetings.map((meeting) => applyWaitingRoomStatus(meeting, now))
+  const readStatus = (meeting: Meeting) => {
+    try {
+      return [applyWaitingRoomStatus(meeting, now)]
+    } catch (cause) {
+      if (cause instanceof InvalidWaitingRoomRecord) return []
+      throw cause
+    }
+  }
+  const meetings = data.meetings.flatMap(readStatus)
   if (!data.myMeetings) return { ...data, meetings }
 
   const mine = new Map(
     meetings.filter(({ membership }) => membership).map((meeting) => [meeting.id, meeting]),
   )
   for (const meeting of data.myMeetings) {
-    if (!mine.has(meeting.id)) mine.set(meeting.id, applyWaitingRoomStatus(meeting, now))
+    if (mine.has(meeting.id)) continue
+    const [current] = readStatus(meeting)
+    if (current) mine.set(current.id, current)
   }
   return {
     ...data,
@@ -261,6 +327,7 @@ export const updateWaitingRoom = async ({
   signal,
   nickname,
   fail,
+  expectedBookingId,
 }: {
   loadMeeting: () => Meeting | undefined
   scope: string
@@ -270,6 +337,7 @@ export const updateWaitingRoom = async ({
   signal: AbortSignal
   nickname?: string
   fail?: boolean
+  expectedBookingId?: string
 }) => {
   const locks = navigator.locks
   if (!locks) {
@@ -284,11 +352,15 @@ export const updateWaitingRoom = async ({
     const meeting = loadMeeting()
     if (getMockStorageScope() !== scope) throw new Error('로그인 정보가 변경됐어요.')
     if (!meeting) throw new Error('모임을 찾을 수 없어요.')
+    if (meeting.kind === 'scheduled' && meeting.bookingId !== expectedBookingId) {
+      throw new Error('예약이 변경됐어요. 현재 예약을 확인한 뒤 다시 시도해 주세요.')
+    }
     const key = roomKey(scope, meeting.id, scenario)
-    const record = readRecord(key, meeting.kind) ?? makeRecord(meeting, openedAt, scenario)
+    const record = readCurrentRecord(key, meeting) ?? makeRecord(meeting, openedAt, scenario)
     const now = Date.now()
     const room = getRoom(meeting, record, now, scenario)
     if (room.phase === 'CANCELED') throw new Error('취소된 모임이에요.')
+    let nextLiveState: LiveState | undefined
     switch (action) {
       case 'join':
         if (room.entered) return
@@ -306,12 +378,12 @@ export const updateWaitingRoom = async ({
       case 'start':
         if (room.phase === 'IN_PROGRESS' && room.isHost && room.entered) return
         if (!room.canStart || !room.entered) throw new Error('지금은 모임을 시작할 수 없어요.')
-        record.liveStarted = true
+        nextLiveState = 'started'
         break
       case 'leave':
         if (room.phase === 'IN_PROGRESS') throw new Error('이미 시작한 모임이에요.')
-        record.enteredAt = null
-        record.closed = meeting.kind === 'live' && room.isHost
+        if (meeting.kind === 'live' && room.isHost) nextLiveState = 'closed'
+        else record.enteredAt = null
         break
       case 'rename':
         if (room.phase === 'IN_PROGRESS') {
@@ -319,11 +391,13 @@ export const updateWaitingRoom = async ({
         }
         if (!nickname?.trim()) throw new Error('닉네임을 입력해 주세요.')
         record.nickname = nickname.trim()
+        record.nicknameEdited = true
         break
     }
     signal.throwIfAborted()
     if (getMockStorageScope() !== scope) throw new Error('로그인 정보가 변경됐어요.')
-    localStorage.setItem(key, JSON.stringify(record))
+    if (nextLiveState) localStorage.setItem(liveStateKey(meeting.id, scenario), nextLiveState)
+    else localStorage.setItem(key, JSON.stringify(record))
   }
 
   await locks.request(mockStorageLock, { signal }, update)
