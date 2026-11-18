@@ -81,6 +81,7 @@ export const MeetingReservation = ({
   const { key, search, state } = useLocation()
   const navigationType = useNavigationType()
   const scenario = import.meta.env.DEV ? new URLSearchParams(search).get('mock') : null
+  const waitingSearch = scenario === 'entry-error' ? '?mock=entry-error' : ''
   const listPath = getMeetingListPath(state?.meetingListSearch)
   const [meeting, setMeeting] = useState<ScheduledMeeting | null>(null)
   const [loadError, setLoadError] = useState(false)
@@ -356,7 +357,11 @@ export const MeetingReservation = ({
     }
     if (meeting.status === 'in-progress') {
       return (
-        <Navigate to={`/meetings/${encodeURIComponent(meetingId)}/chat`} replace state={state} />
+        <Navigate
+          to={`/meetings/${encodeURIComponent(meetingId)}/chat${waitingSearch}`}
+          replace
+          state={state}
+        />
       )
     }
   }
@@ -472,7 +477,7 @@ export const MeetingReservation = ({
                       setNow(Date.now())
                       return
                     }
-                    navigate(`/meetings/${encodeURIComponent(meetingId)}/waiting`, {
+                    navigate(`/meetings/${encodeURIComponent(meetingId)}/waiting${waitingSearch}`, {
                       state: {
                         fromReservation: true,
                         meetingListSearch: state?.meetingListSearch,
