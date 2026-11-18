@@ -4,7 +4,14 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faPenToSquare } from '@fortawesome/free-solid-svg-icons'
 import { Button, Input, Modal, SheepProfile } from '@/components'
 import { apiClient, getAccessToken } from '@/lib/api-client'
-import { colors, readPreviewColor, readPreviewNickname, writePreviewValue } from './preview'
+import {
+  colors,
+  readPreviewColor,
+  readPreviewNickname,
+  readSheepColor,
+  writePreviewValue,
+  writeSheepColor,
+} from './preview'
 import type { SheepColor } from './preview'
 import styles from './ProfileEdit.module.css'
 
@@ -23,7 +30,10 @@ export const ProfileEdit = () => {
   const navigate = useNavigate()
   const preview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
   const [nickname, setNickname] = useState(() => (preview ? readPreviewNickname() : ''))
-  const [color, setColor] = useState<SheepColor>(() => (preview ? readPreviewColor() : 'green'))
+  const [color, setColor] = useState<SheepColor>(() =>
+    preview ? readPreviewColor() : readSheepColor(),
+  )
+  const [colorError, setColorError] = useState('')
   const [balance, setBalance] = useState<number | null>(preview ? 2 : null)
   const [loading, setLoading] = useState(!preview)
   const [saving, setSaving] = useState(false)
@@ -101,11 +111,15 @@ export const ProfileEdit = () => {
   }
 
   const choose = (next: SheepColor) => {
-    setColor(next)
     if (preview) {
       writePreviewValue('sheepColor', next)
-      setOpen(false)
+    } else if (!writeSheepColor(next)) {
+      setColorError('색상을 저장하지 못했어요. 브라우저 저장소를 확인해 주세요.')
+      return
     }
+    setColor(next)
+    setColorError('')
+    setOpen(false)
   }
 
   return (
@@ -201,11 +215,12 @@ export const ProfileEdit = () => {
             </button>
           ))}
         </div>
-        {!preview && (
-          <p className="text-caption">
-            선택한 색상을 미리 볼 수 있어요. 색상 저장 기능은 준비 중이에요.
+        {colorError && (
+          <p className="text-caption" role="alert">
+            {colorError}
           </p>
         )}
+        {!preview && <p className="text-caption">선택한 색상은 이 브라우저에만 저장돼요.</p>}
       </Modal>
     </main>
   )

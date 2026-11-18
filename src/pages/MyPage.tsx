@@ -17,7 +17,7 @@ import {
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { HomeLayout, Modal, SheepProfile } from '@/components'
 import { apiClient, getAccessToken, setAccessToken } from '@/lib/api-client'
-import { readPreviewColor } from '@/features/profile'
+import { readPreviewColor, readSheepColor } from '@/features/profile'
 import { readPreviewPlan } from '@/features/plans'
 import styles from './MyPage.module.css'
 
@@ -148,7 +148,7 @@ export const MyPage = () => {
           </div>
           <div className={styles.avatar}>
             <div className={styles.avatarImage}>
-              <SheepProfile color={preview ? readPreviewColor() : 'green'} size={95} />
+              <SheepProfile color={preview ? readPreviewColor() : readSheepColor()} size={95} />
             </div>
           </div>
           <div className={styles.stat}>

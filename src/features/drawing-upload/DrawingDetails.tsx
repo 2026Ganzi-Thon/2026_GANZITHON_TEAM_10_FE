@@ -8,7 +8,7 @@ import styles from './DrawingDetails.module.css'
 const isValidId = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 
-type UploadedDrawing = { drawingId?: number; activityId?: number; title: string; note: string }
+type UploadedDrawing = { drawingId?: number; recordId?: number; title: string; note: string }
 
 // 화면을 떠난 뒤 완료된 업로드도 같은 그림으로 돌아오면 재사용한다.
 const completedUploads = new Map<string, UploadedDrawing>()
@@ -35,7 +35,7 @@ export const DrawingDetails = () => {
   const [thought, setThought] = useState(data?.draft?.note ?? uploaded?.note ?? '')
   const [error, setError] = useState('')
   const invalidUpload =
-    !!uploaded && (!isValidId(uploaded.drawingId) || !isValidId(uploaded.activityId))
+    !!uploaded && (!isValidId(uploaded.drawingId) || !isValidId(uploaded.recordId))
   const [notice, setNotice] = useState(
     invalidUpload
       ? '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.'
@@ -68,7 +68,7 @@ export const DrawingDetails = () => {
       uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined)
     if (
       currentUpload &&
-      (!isValidId(currentUpload.drawingId) || !isValidId(currentUpload.activityId))
+      (!isValidId(currentUpload.drawingId) || !isValidId(currentUpload.recordId))
     ) {
       setNotice(
         '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.',
@@ -99,26 +99,30 @@ export const DrawingDetails = () => {
       })
       if (!active.current) return
       let drawingId = currentUpload?.drawingId ?? 0
-      let activityId: number | undefined = currentUpload?.activityId
+      let recordId: number | undefined = currentUpload?.recordId
       if (!isPreview && !currentUpload && data?.topic && data.inputType && photo instanceof Blob) {
         const body = new FormData()
         body.append('image', photo, photo instanceof File ? photo.name : 'drawing.jpg')
-        body.append('inputType', data.inputType)
-        body.append('topicId', String(data.topic.topicId))
-        if (thought.trim()) body.append('note', thought.trim())
         let upload = pendingUploads.get(draftId)
         if (!upload) {
           upload = apiClient
-            .post<{ success: boolean; data: { drawingId: number; activityId: number } }>(
+            .post<{ success: boolean; data: { drawingId: number; recordId: number } }>(
               '/api/drawings',
               body,
+              {
+                params: {
+                  inputType: data.inputType,
+                  topicId: data.topic.topicId,
+                  ...(thought.trim() ? { note: thought.trim() } : {}),
+                },
+              },
             )
             .then((response) => {
               if (!response.data.success) throw new Error('upload failed')
               const result = response.data.data
               const saved = {
                 drawingId: isValidId(result?.drawingId) ? result.drawingId : undefined,
-                activityId: isValidId(result?.activityId) ? result.activityId : undefined,
+                recordId: isValidId(result?.recordId) ? result.recordId : undefined,
                 ...draft,
               }
               completedUploads.set(draftId, saved)
@@ -130,7 +134,7 @@ export const DrawingDetails = () => {
         const saved = await upload
         draft.note = saved.note
         const validDrawingId = saved.drawingId
-        const validActivityId = saved.activityId
+        const validRecordId = saved.recordId
         if (!active.current) return
         await navigate(`${location.pathname}${location.search}`, {
           replace: true,
@@ -141,14 +145,14 @@ export const DrawingDetails = () => {
             uploaded: saved,
           },
         })
-        if (!validDrawingId || !validActivityId) {
+        if (!validDrawingId || !validRecordId) {
           setNotice(
             '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.',
           )
           return
         }
         drawingId = validDrawingId
-        activityId = validActivityId
+        recordId = validRecordId
       }
       if (!active.current) return
       navigate(`/drawing/conversation${isPreview ? '?preview' : ''}`, {
@@ -160,7 +164,7 @@ export const DrawingDetails = () => {
             note: draft.note,
             imageUrl: photo instanceof Blob ? URL.createObjectURL(photo) : previewImage,
           },
-          activityId,
+          recordId,
         },
       })
     } catch {

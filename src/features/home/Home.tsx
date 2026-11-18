@@ -25,7 +25,7 @@ type RecordItem = { recordId: number; imageUrl: string | null }
 type Meeting = {
   meetingId: number
   title: string
-  startAt: string
+  startAt: string | null
   participantCount: number
   capacity: number
 }
@@ -48,7 +48,7 @@ const previewMeetings: Meetings = {
 /** 홈에서 사용하는 각 API를 독립적으로 조회해 부분 실패를 구분한다. */
 const useHomeData = (preview: boolean) => {
   const [user, setUser] = useState<Loadable<{ nickname: string }>>(loading)
-  const [sheep, setSheep] = useState<Loadable<{ balance: number; sheepStage: number }>>(loading)
+  const [sheep, setSheep] = useState<Loadable<{ balance: number }>>(loading)
   const [record, setRecord] = useState<Loadable<RecordItem>>(loading)
   const [meetings, setMeetings] = useState<Loadable<Meetings>>(loading)
   const [retry, setRetry] = useState(0)
@@ -70,19 +70,29 @@ const useHomeData = (preview: boolean) => {
       }
     }
     void get('/api/users/me', setUser, (data) => data as { nickname: string })
-    void get('/api/sheep', setSheep, (data) => data as { balance: number; sheepStage: number })
+    void get('/api/sheep', setSheep, (data) => data as { balance: number })
     void get(
       '/api/records?size=1',
       setRecord,
       (data) => (data as { items: RecordItem[] }).items[0] ?? null,
     )
-    void get('/api/meetings/me', setMeetings, (data) => data as Meetings)
+    void get('/api/meetings/me', setMeetings, (data) => {
+      const items = (data as { meetings: Meeting[] }).meetings
+      if (!Array.isArray(items)) throw new Error('Invalid response')
+      const dates = items.filter((item) => item.startAt && !Number.isNaN(Date.parse(item.startAt)))
+      dates.sort((a, b) => Date.parse(a.startAt!) - Date.parse(b.startAt!))
+      return {
+        meetings: items,
+        count: items.length,
+        nextMeeting: dates[0]?.startAt ? { startAt: dates[0].startAt } : null,
+      }
+    })
     return () => controller.abort()
   }, [preview, retry])
   return preview
     ? {
         user: { status: 'ready' as const, data: { nickname: '딸기를 좋아하는 양' } },
-        sheep: { status: 'ready' as const, data: { balance: 2, sheepStage: 1 } },
+        sheep: { status: 'ready' as const, data: { balance: 2 } },
         record: { status: 'ready' as const, data: { recordId: 1, imageUrl: previewDrawing } },
         meetings: { status: 'ready' as const, data: previewMeetings },
         retry: () => setRetry((v) => v + 1),
@@ -310,7 +320,9 @@ export const Home = () => {
                               <span className={styles.meetingDetails}>
                                 <span>
                                   <FontAwesomeIcon icon={faCalendarDays} />
-                                  {formatDate(meeting.startAt)}
+                                  {meeting.startAt
+                                    ? formatDate(meeting.startAt)
+                                    : '지금 모이는 모양'}
                                 </span>
                                 <span>
                                   <FontAwesomeIcon icon={faUsers} />

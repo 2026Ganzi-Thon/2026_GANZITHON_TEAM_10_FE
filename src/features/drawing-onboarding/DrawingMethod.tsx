@@ -23,6 +23,7 @@ export const DrawingMethod = () => {
     hints: string[]
   } | null>(null)
   const [topicError, setTopicError] = useState(false)
+  const [topicAttempt, setTopicAttempt] = useState(0)
 
   useEffect(() => {
     if (isPreview && !programActivity) return
@@ -49,7 +50,7 @@ export const DrawingMethod = () => {
     return () => {
       cancelled = true
     }
-  }, [isPreview, programActivity])
+  }, [isPreview, programActivity, topicAttempt])
 
   return (
     <div className={styles.page}>
@@ -76,8 +77,19 @@ export const DrawingMethod = () => {
                 ? '내 마음속 방을 그려볼까요?'
                 : (topic?.title ?? '주제를 불러오고 있어요.'))}
           </h1>
-          {programActivity && topicError && (
-            <p role="alert">선택한 주제의 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+          {topicError && (
+            <p role="alert">
+              주제 정보를 불러오지 못했어요.{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setTopicError(false)
+                  setTopicAttempt((value) => value + 1)
+                }}
+              >
+                다시 시도
+              </button>
+            </p>
           )}
         </section>
         <section className={styles.methods} aria-labelledby="method-heading">
@@ -126,7 +138,7 @@ export const DrawingMethod = () => {
       </div>
       <div className={styles.actions}>
         <Button
-          disabled={!method || (programActivity ? !topic : !isPreview && !topic && !topicError)}
+          disabled={!method || (programActivity ? !topic : !isPreview && !topic)}
           onClick={() =>
             navigate(
               `/drawing/onboarding/3?type=${method === 'paper' ? 'paper' : 'canvas'}${isPreview ? '&preview' : ''}`,
