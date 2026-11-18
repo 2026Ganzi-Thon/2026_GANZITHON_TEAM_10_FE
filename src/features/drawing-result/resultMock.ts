@@ -1,37 +1,50 @@
 import {
+  findSavedReflection,
+  getMockRecordId,
+  getReflectionStorageKey,
   hasSavedReflection,
-  readReflections,
+  readReflectionStore,
   withReflectionLock,
-  writeReflections,
 } from '@/lib/mock-reflections'
-import type { MockRecord, MockReflectionStore, ReflectionCard } from '@/lib/mock-reflections'
-import { getMockStorageKey } from '@/lib/mock-storage'
+import type {
+  MockRecord,
+  MockReflectionStore,
+  RecordId,
+  ReflectionCard,
+} from '@/lib/mock-reflections'
+import { writeMockStorage } from '@/lib/mock-storage'
 import { exampleDrawing, getReplyText } from '@/features/drawing-conversation/conversationMock'
 import type {
   Conversation,
   ConversationDrawing,
 } from '@/features/drawing-conversation/conversationMock'
 import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
-import { canCompleteProgramActivity, readPrograms } from '@/features/personal-program/programMock'
+import {
+  applyProgramActivityCompletion,
+  canCompleteProgramActivity,
+  getProgramStorageKey,
+  readPrograms,
+} from '@/features/personal-program/programMock'
 
 export type DrawingResultSource = {
   drawing: ConversationDrawing
   conversation: Conversation
-  activityId?: number
+  recordId?: RecordId
   programActivity?: ProgramActivityHandoff
   conversationStorageKey?: string
 }
 
 export type DrawingResultData = {
+  recordId: RecordId
   drawing: ConversationDrawing
   messages: Conversation['messages']
   card: ReflectionCard
 }
 
 type SaveOutcome =
-  | { status: 'saved'; sheepReward: 1 }
+  | { status: 'saved'; sheepEarned: 0 | 1; record: MockRecord }
   | { status: 'already-saved'; record?: MockRecord }
-  | { status: 'daily-limit' }
+  | { status: 'progress-pending'; sheepEarned: 0 | 1; record: MockRecord }
   | { status: 'activity-unavailable' }
 
 const recordDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' })
@@ -51,14 +64,14 @@ export const getReflectionSaveStatus = (
   store: MockReflectionStore,
   drawingId: number,
   activity?: ProgramActivityHandoff,
-  today = recordDate.format(new Date()),
+  recordId = getMockRecordId(drawingId),
 ) => {
-  if (hasSavedReflection(store, drawingId)) return 'already-saved'
+  if (hasSavedReflection(store, recordId, drawingId)) return 'already-saved'
   if (activity && store.records.some((record) => isActivityRecord(record, activity))) {
     return 'already-saved'
   }
 
-  return store.records.some((record) => record.recordDate === today) ? 'daily-limit' : 'available'
+  return 'available'
 }
 
 export const createReflectionPreview = (
@@ -69,7 +82,7 @@ export const createReflectionPreview = (
     return { records: [], completedDrawingIds: [] }
   }
 
-  if (scenario === 'daily-limit' || scenario === 'already-saved') {
+  if (scenario === 'additional-save' || scenario === 'already-saved') {
     const drawingId = scenario === 'already-saved' ? exampleDrawing.drawingId : -1
     return {
       records: [{ drawingId, recordDate: recordDate.format(new Date()), sheepReward: 1 }],
@@ -124,7 +137,7 @@ export const exampleResultSource: DrawingResultSource = {
 }
 
 export const loadDrawingResult = async (
-  { drawing, conversation }: DrawingResultSource,
+  { drawing, conversation, recordId = getMockRecordId(drawing.drawingId) }: DrawingResultSource,
   fail: boolean,
 ): Promise<DrawingResultData> => {
   await new Promise((resolve) => window.setTimeout(resolve, 400))
@@ -139,6 +152,7 @@ export const loadDrawingResult = async (
   const reflection = answers.at(-1) || whatISaid
 
   return {
+    recordId,
     drawing,
     messages: conversation.messages,
     card: {
@@ -152,7 +166,7 @@ export const loadDrawingResult = async (
 }
 
 export const saveDrawingResult = async (
-  { drawing: { drawingId, title }, card }: DrawingResultData,
+  { drawing: { drawingId, title }, card, recordId = getMockRecordId(drawingId) }: DrawingResultData,
   {
     preview,
     previewWallet,
@@ -167,56 +181,89 @@ export const saveDrawingResult = async (
     activity?: ProgramActivityHandoff
   },
 ): Promise<SaveOutcome> => {
-  const accountKey = getMockStorageKey('moyang:mock-reflection-records')
+  const accountKey = getReflectionStorageKey(previewWallet)
+  const programKey = getProgramStorageKey(activity?.mock)
+  const assertAccount = () => {
+    if (accountKey !== getReflectionStorageKey(previewWallet))
+      throw new Error('로그인 정보가 변경됐어요')
+  }
+  const readStore = () => {
+    const store = preview ?? readReflectionStore(accountKey)
+    assertAccount()
+    return store
+  }
   await new Promise((resolve) => window.setTimeout(resolve, 500))
   signal.throwIfAborted()
-  if (accountKey !== getMockStorageKey('moyang:mock-reflection-records')) {
-    throw new Error('로그인 정보가 변경됐어요')
-  }
+  assertAccount()
   if (fail) throw new Error('Mock record save failed')
+
+  if (!activity) {
+    const store = readStore()
+    if (hasSavedReflection(store, recordId, drawingId)) {
+      return { status: 'already-saved', record: findSavedReflection(store, recordId, drawingId) }
+    }
+  }
 
   const save = (): SaveOutcome => {
     signal.throwIfAborted()
     if (import.meta.env.DEV && preview && activity?.mock && hasCompletedPreviewActivity(activity)) {
       return { status: 'already-saved' }
     }
-    const store = preview ?? readReflections(previewWallet)
+    const store = readStore()
     const { records, completedDrawingIds } = store
     const today = recordDate.format(new Date())
-    const status = getReflectionSaveStatus(store, drawingId, activity, today)
-    if (status === 'already-saved') {
-      return {
-        status,
-        record: activity
-          ? records.find((record) => isActivityRecord(record, activity))
-          : records.find((record) => record.drawingId === drawingId),
+    const existing = activity
+      ? records.find((record) => isActivityRecord(record, activity))
+      : findSavedReflection(store, recordId, drawingId)
+
+    const applyProgress = (record: MockRecord, sheepEarned: 0 | 1): SaveOutcome | null => {
+      if (!activity) return null
+      try {
+        signal.throwIfAborted()
+        assertAccount()
+        const completionDate = activity.date === record.recordDate ? record.recordDate : today
+        if (
+          record.recordDate > activity.date ||
+          !applyProgramActivityCompletion(activity, activity.mock, completionDate, programKey)
+        )
+          return { status: 'activity-unavailable' }
+        return null
+      } catch {
+        return { status: 'progress-pending', record, sheepEarned }
       }
     }
-    if (status === 'daily-limit') return { status }
-    if (activity && !canCompleteProgramActivity(activity, activity.mock)) {
+
+    if (existing) {
+      return applyProgress(existing, 0) ?? { status: 'already-saved', record: existing }
+    }
+    if (hasSavedReflection(store, recordId, drawingId)) {
+      return activity ? { status: 'activity-unavailable' } : { status: 'already-saved' }
+    }
+    if (activity && !canCompleteProgramActivity(activity, activity.mock, programKey)) {
       return { status: 'activity-unavailable' }
     }
 
-    const sheepReward = 1
+    const sheepEarned = records.some((record) => record.recordDate === today) ? 0 : 1
+    const record: MockRecord = {
+      recordId,
+      drawingId,
+      recordDate: today,
+      ...(sheepEarned === 1 && { sheepReward: 1 as const }),
+      title,
+      card,
+      ...(activity && { activityKey: `${getActivityKey(activity)}:${activity.date}` }),
+    }
     const next: MockReflectionStore = {
       ...store,
-      records: [
-        ...records,
-        {
-          drawingId,
-          recordDate: today,
-          sheepReward,
-          title,
-          card,
-          ...(activity && { activityKey: getActivityKey(activity) }),
-        },
-      ],
-      completedDrawingIds: [...completedDrawingIds, drawingId],
+      records: [...records, record],
+      completedDrawingIds: [...new Set([...completedDrawingIds, drawingId])],
     }
+    signal.throwIfAborted()
+    assertAccount()
     if (preview) Object.assign(preview, next)
-    else writeReflections(next, previewWallet)
-    return { status: 'saved', sheepReward }
+    else writeMockStorage(accountKey, next)
+    return applyProgress(record, sheepEarned) ?? { status: 'saved', record, sheepEarned }
   }
 
-  return preview ? save() : withReflectionLock(signal, save)
+  return withReflectionLock(signal, save)
 }

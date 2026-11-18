@@ -783,7 +783,7 @@ test('legacy reflection migration preserves the new booking ledger', async () =>
   assert.equal(e.reflections.getWoolBalance(), 3)
   assert.equal(e.reflections.readReflections().records.length, 4)
 })
-test('first reflection reward funds a booking without resetting the daily save limit', async () => {
+test('additional same-day reflection preserves the booking payment and refund', async () => {
   const e = environment()
   const result = e.load('src/features/drawing-result/resultMock.ts')
   const data = { drawing: { drawingId: 91, title: 'QA' }, card: { todaysStory: 'QA' } }
@@ -797,17 +797,17 @@ test('first reflection reward funds a booking without resetting the daily save l
     'already-saved',
   )
   const second = { ...data, drawing: { drawingId: 92, title: 'QA 2' } }
-  assert.equal(
-    (await result.saveDrawingResult(second, { ...options, signal: signal() })).status,
-    'daily-limit',
-  )
+  const additional = await result.saveDrawingResult(second, { ...options, signal: signal() })
+  assert.equal(additional.status, 'saved')
+  assert.equal(additional.sheepEarned, 0)
+  assert.equal(e.reflections.getWoolBalance(), 0)
   await e.reservation.cancelReservation('211', signal())
   assert.equal(e.reflections.getWoolBalance(), 1)
   assert.equal(
     (await result.saveDrawingResult(second, { ...options, signal: signal() })).status,
-    'daily-limit',
+    'already-saved',
   )
-  assert.equal(e.reflections.readReflections().records.length, 1)
+  assert.equal(e.reflections.readReflections().records.length, 2)
 })
 test('booking and refund preserve personal-program schedules across a reload', async () => {
   const e = environment()

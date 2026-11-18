@@ -4,7 +4,13 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarDays, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
 import { Button } from '@/components'
 import { readPrograms } from './programMock'
-import { formatActivityDate, formatWeekdays, getActivitySchedule, rounds } from './programSchedule'
+import {
+  formatActivityDate,
+  formatWeekdays,
+  getActivitySchedule,
+  getProgramRounds,
+  rounds,
+} from './programSchedule'
 import type { FirstReflection, PersonalProgram, ProgramActivity } from './programSchedule'
 import { useProgramToday } from './useProgramToday'
 import styles from './PersonalProgram.module.css'
@@ -67,7 +73,7 @@ export const ProgramTimeline = ({
     <h2>{isSetup ? '미술 활동 단계' : '이런 활동을 진행할 예정이에요'}</h2>
     {isSetup && <p>각 미술 활동의 구체적인 그림 주제는 활동 당일에 공개돼요.</p>}
     <ol className={isSetup ? styles.setupTimeline : styles.timeline}>
-      {rounds.map((round, index) => {
+      {getProgramRounds(firstReflection?.concern.id).map((round, index) => {
         const isComplete = index < completed
         const isNext = index === completed
         const isToday = activity?.round === index + 1

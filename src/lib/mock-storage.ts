@@ -1,7 +1,7 @@
 const legacyOwnerKey = 'moyang:mock-storage-legacy-owner'
 const legacyReaders = new Map<
   string,
-  (local: string | null, session: string | null) => string | undefined
+  (local: string | null, session: string | null, suffix: string) => string | undefined
 >()
 const legacyMigrations = new Map<string, (accountSuffix: string) => void>()
 const migratingKeys = new Set<string>()
@@ -129,7 +129,8 @@ export const writeMockStorage = (key: string, data: unknown) => {
 }
 
 export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T | null => {
-  const accountSuffix = getAccountSuffix() || ':guest'
+  const suffix = getAccountSuffix()
+  const accountSuffix = suffix || ':guest'
   const readLegacy = key.endsWith(accountSuffix)
     ? legacyReaders.get(key.slice(0, -accountSuffix.length))
     : undefined
@@ -143,7 +144,7 @@ export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T 
       sessionUnavailable = true
     }
   }
-  const saved = readLegacy?.(local, session) ?? local ?? session
+  const saved = readLegacy?.(local, session, suffix) ?? local ?? session
   if (saved === null && sessionUnavailable) throw new MockStorageUnavailableError()
   if (saved === null) return null
 
@@ -261,8 +262,7 @@ export const migrateLegacyMockKey = <T>(
   }
 
   legacyMigrations.set(key, migrateForAccount)
-  legacyReaders.set(key, (local, session) => {
-    const suffix = getAccountSuffix()
+  legacyReaders.set(key, (local, session, suffix) => {
     const sources = suffix ? readSources(suffix, local === null && session === null) : []
     if (!sources.length && session === null) return
     const current =

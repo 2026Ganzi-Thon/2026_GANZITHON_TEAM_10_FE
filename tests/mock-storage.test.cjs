@@ -25,7 +25,9 @@ const program = {
 const plain = (value) => JSON.parse(JSON.stringify(value))
 
 function environment(local = new Map(), session = new Map(), sharedLocks) {
+  let afterRead
   let failWrites = false
+  let writeBlockedKey
   let denySessionReads = false
   let denySessionAccess = false
   let denyLocalReads = false
@@ -40,10 +42,12 @@ function environment(local = new Map(), session = new Map(), sharedLocks) {
     getItem(key) {
       if (denySessionReads && values === session) throw new Error('session unavailable')
       if (denyLocalReads && values === local) throw new Error('local unavailable')
-      return values.get(key) ?? null
+      const value = values.get(key) ?? null
+      if (values === local) afterRead?.(key)
+      return value
     },
     setItem(key, value) {
-      if (failWrites) throw new Error('quota')
+      if (failWrites || key === writeBlockedKey) throw new Error('quota')
       if (values === local) {
         const size = [...values]
           .filter(([existingKey]) => existingKey !== key)
@@ -120,11 +124,13 @@ function environment(local = new Map(), session = new Map(), sharedLocks) {
   return {
     local,
     session,
+    onRead: (callback) => (afterRead = callback),
     shared,
     reflections,
     programs,
     load: (file) => load(path.join(root, file)),
     fail: (value) => (failWrites = value),
+    blockWrite: (key) => (writeBlockedKey = key),
     limit: (value) => (storageLimit = value),
     denySessionReads: (value) => (denySessionReads = value),
     denyLocalReads: (value) => (denyLocalReads = value),
@@ -202,11 +208,11 @@ test('소유자가 확인된 자료는 앱 실행 후 로그인해도 새로고�
   assert.deepEqual(plain(e.reflections.readReflections()), reflection)
   assert.deepEqual(plain(e.programs.readPrograms()), [program])
   const result = e.load('src/features/drawing-result/resultMock.ts')
-  assert.equal(result.getReflectionSaveStatus(e.reflections.readReflections(), 99), 'daily-limit')
+  assert.equal(result.getReflectionSaveStatus(e.reflections.readReflections(), 41), 'already-saved')
   assert.equal(e.reflections.getWoolBalance(), 1)
 })
 
-test('정상 이전과 재실행에서 기록·당일 제한·사용한 양털·변경한 일정을 유지한다', async () => {
+test('정상 이전과 재실행에서 같은 날의 기록과 양털 지급·차감 및 변경한 일정을 유지한다', async () => {
   const e = environment()
   e.seed()
   e.account('a')
@@ -225,7 +231,7 @@ test('정상 이전과 재실행에서 기록·당일 제한·사용한 양털·
   await e.boot()
   assert.equal(e.local.has(recordsKey), false)
   assert.equal(e.session.has(programsKey), false)
-  assert.deepEqual(plain(e.reflections.readReflections().records), [current])
+  assert.deepEqual(plain(e.reflections.readReflections().records), [record, current])
   assert.deepEqual(plain(e.reflections.readReflections().completedDrawingIds), [41, 42])
   assert.equal(e.reflections.getWoolBalance(), 0)
   assert.deepEqual(plain(e.programs.readPrograms()), [updated])
@@ -234,7 +240,7 @@ test('정상 이전과 재실행에서 기록·당일 제한·사용한 양털·
   assert.deepEqual([...e.local], saved)
 })
 
-test('저장 공간이 부족해도 소유자의 원본과 당일 저장 제한을 유지하고 재시도한다', async () => {
+test('저장 공간이 부족해도 소유자의 원본과 저장 이력을 유지하고 재시도한다', async () => {
   const e = environment()
   e.seed()
   e.account('a')
@@ -244,7 +250,7 @@ test('저장 공간이 부족해도 소유자의 원본과 당일 저장 제한�
   assert.equal(e.local.get(recordsKey), JSON.stringify(reflection))
   assert.equal(e.session.get(programsKey), JSON.stringify([program]))
   const result = e.load('src/features/drawing-result/resultMock.ts')
-  assert.equal(result.getReflectionSaveStatus(e.reflections.readReflections(), 99), 'daily-limit')
+  assert.equal(result.getReflectionSaveStatus(e.reflections.readReflections(), 41), 'already-saved')
   assert.deepEqual(plain(e.programs.readPrograms()), [program])
   e.fail(false)
   await e.boot()
@@ -457,31 +463,243 @@ test('기존 자료 조회 직후 취소한 일정이 이전 작업으로 되살
   assert.equal(saved.nextDate, null)
 })
 
-test('실제 회고 저장에서도 당일 제한을 지키고 다음 날 새 회고를 추가한다', async () => {
+test('같은 날 두 번째 회고를 저장하고 KST 자정 이후에는 새로 한 번 지급한다', async () => {
   const e = environment()
-  e.seed()
-  e.local.set(ownerKey, 'moyang:user:a')
-  await e.boot()
   e.account('a')
   const result = e.load('src/features/drawing-result/resultMock.ts')
-  const data = { drawing: { drawingId: 99, title: '새 회고' }, card: { todaysStory: '새 이야기' } }
-  const options = () => ({
+  const save = (recordId) =>
+    result.saveDrawingResult(
+      {
+        recordId,
+        drawing: { drawingId: 99, title: '새 회고' },
+        card: { todaysStory: '새 이야기' },
+      },
+      { preview: null, previewWallet: false, fail: false, signal: new AbortController().signal },
+    )
+  e.time('2026-11-14T23:59:59+09:00')
+  const results = await Promise.all([save(501), save(502), save(501)])
+  assert.deepEqual(
+    results.map(({ status }) => status),
+    ['saved', 'saved', 'already-saved'],
+  )
+  assert.deepEqual(
+    results.slice(0, 2).map(({ sheepEarned }) => sheepEarned),
+    [1, 0],
+  )
+  assert.equal(e.reflections.getWoolBalance(), 1)
+  e.time('2026-11-15T00:00:00+09:00')
+  assert.equal((await save(502)).status, 'already-saved')
+  assert.equal((await save(503)).sheepEarned, 1)
+  assert.deepEqual(
+    plain(e.reflections.readReflections().records).map(({ recordId }) => recordId),
+    [501, 502, 503],
+  )
+  assert.equal(e.reflections.getWoolBalance(), 2)
+})
+
+test('종합 이야기와 그림 메모, 대화에서 떠올린 생각을 기록 ID와 함께 저장한다', async () => {
+  const e = environment()
+  const result = e.load('src/features/drawing-result/resultMock.ts')
+  const loaded = await result.loadDrawingResult(
+    {
+      drawing: { drawingId: 8, title: '산책길', note: '고요한 시간을 그렸어요.' },
+      conversation: {
+        status: 'ended',
+        questionIndex: 2,
+        messages: [
+          { role: 'user', text: '집 앞 산책길을 그렸어요.' },
+          { role: 'user', text: '햇살이 들어오는 길이요.' },
+        ],
+      },
+      recordId: 57,
+    },
+    false,
+  )
+  await result.saveDrawingResult(loaded, {
     preview: null,
     previewWallet: false,
     fail: false,
     signal: new AbortController().signal,
   })
-  assert.equal((await result.saveDrawingResult(data, options())).status, 'daily-limit')
-  assert.equal(e.reflections.getWoolBalance(), 1)
-  e.time('2026-11-15T12:00:00+09:00')
-  assert.equal((await result.saveDrawingResult(data, options())).status, 'saved')
-  assert.equal((await result.saveDrawingResult(data, options())).status, 'already-saved')
-  assert.equal(e.reflections.readReflections().records.length, 2)
-  assert.equal(e.reflections.getWoolBalance(), 2)
-  assert.equal(
-    e.reflections.readReflections().records.some(({ drawingId }) => drawingId === 41),
-    true,
+  const [saved] = e.reflections.readReflections().records
+  assert.equal(saved.recordId, 57)
+  assert.match(saved.card.todaysStory, /햇살이 들어오는 길이요/)
+  assert.equal(saved.card.whatISaid, '고요한 시간을 그렸어요.')
+  assert.equal(saved.card.thoughts, '햇살이 들어오는 길이요.')
+})
+
+for (const retry of ['원래 결과', '다음 활동일의 새 결과']) {
+  test(`회차 쓰기 실패 후 ${retry}에서 회고나 양털 없이 진행률만 복구한다`, async () => {
+    const e = environment()
+    e.account('a')
+    const result = e.load('src/features/drawing-result/resultMock.ts')
+    const schedule = e.load('src/features/personal-program/programSchedule.ts')
+    const activity = { programId: program.id, round: 2, date: today }
+    const key = e.shared.getMockStorageKey(programsKey)
+    const walletKey = e.shared.getMockStorageKey(recordsKey)
+    e.local.set(key, JSON.stringify([{ ...program, days: [6, 0], nextDate: today }]))
+    const save = (target, recordId) =>
+      result.saveDrawingResult(
+        {
+          recordId,
+          drawing: { drawingId: recordId + 22, title: '두 번째 모양' },
+          card: { todaysStory: '이야기' },
+        },
+        {
+          preview: null,
+          previewWallet: false,
+          fail: false,
+          signal: new AbortController().signal,
+          activity: target,
+        },
+      )
+    e.blockWrite(key)
+    const first = await save(activity, 77)
+    assert.equal(first.status, 'progress-pending')
+    assert.equal(first.sheepEarned, 1)
+    assert.equal(e.programs.readPrograms()[0].completed, 1)
+    const savedWallet = e.local.get(walletKey)
+
+    e.blockWrite(undefined)
+    e.time('2026-11-15T12:00:00+09:00')
+    const rescheduled = schedule.getProgramActivity(e.programs.readPrograms()[0], '2026-11-15')
+    assert.equal(rescheduled.round, activity.round)
+    assert.equal(rescheduled.date, '2026-11-15')
+    const latest = retry === '원래 결과' ? activity : rescheduled
+    const id = retry === '원래 결과' ? 77 : 80
+
+    const early = await save({ ...latest, date: '2026-11-21' }, id)
+    assert.equal(early.status, 'activity-unavailable')
+    assert.equal(e.programs.readPrograms()[0].completed, 1)
+    assert.equal(e.local.get(walletKey), savedWallet)
+
+    const recovery = await save(latest, id)
+    assert.equal(recovery.status, 'already-saved')
+    assert.equal(recovery.record.recordId, 77)
+    assert.equal((await save(latest, id)).status, 'already-saved')
+    assert.equal(e.programs.readPrograms()[0].completed, 2)
+    assert.equal(
+      e.programs.readPrograms()[0].nextDate,
+      retry === '원래 결과' ? '2026-11-15' : '2026-11-21',
+    )
+    assert.equal(e.reflections.getWoolBalance(), 1)
+    assert.equal(e.local.get(walletKey), savedWallet)
+  })
+}
+
+test('회차 기록을 읽은 직후 계정이 바뀌면 원래 회고만 보존하고 새 계정 일정은 건드리지 않는다', async () => {
+  const e = environment()
+  e.account('a')
+  const aProgramKey = e.shared.getMockStorageKey(programsKey)
+  const aWalletKey = e.shared.getMockStorageKey(recordsKey)
+  const due = JSON.stringify([{ ...program, days: [6], nextDate: today }])
+  const bPrograms = JSON.stringify([{ ...program, id: 'b-program' }])
+  e.local.set(aProgramKey, due)
+  e.local.set(`${programsKey}:user:b`, bPrograms)
+  let reads = 0
+  e.onRead((key) => {
+    if (key === aProgramKey && ++reads === 2) e.account('b')
+  })
+  const result = e.load('src/features/drawing-result/resultMock.ts')
+  const data = {
+    recordId: 81,
+    drawing: { drawingId: 91, title: '둘째 모양' },
+    card: { todaysStory: '이야기' },
+  }
+  const options = {
+    preview: null,
+    previewWallet: false,
+    fail: false,
+    signal: new AbortController().signal,
+    activity: { programId: program.id, round: 2, date: today },
+  }
+  assert.equal((await result.saveDrawingResult(data, options)).status, 'progress-pending')
+  assert.equal(e.local.get(aProgramKey), due)
+  assert.equal(e.local.get(`${programsKey}:user:b`), bPrograms)
+  assert.equal(e.local.has(`${recordsKey}:user:b`), false)
+  const saved = e.local.get(aWalletKey)
+  assert.equal(JSON.parse(saved).records[0].recordId, 81)
+
+  e.onRead(undefined)
+  e.account('a')
+  assert.equal((await result.saveDrawingResult(data, options)).status, 'already-saved')
+  assert.equal(e.programs.readPrograms()[0].completed, 2)
+  assert.equal(e.local.get(aWalletKey), saved)
+})
+
+test('양털 잔액을 읽은 직후 바뀐 계정에는 회고와 차감을 옮기지 않는다', async () => {
+  const e = environment()
+  e.account('a')
+  const aKey = e.shared.getMockStorageKey(recordsKey)
+  const bKey = `${recordsKey}:user:b`
+  const original = JSON.stringify(reflection)
+  e.local.set(aKey, original)
+  e.local.set(bKey, JSON.stringify({ records: [], completedDrawingIds: [] }))
+  const before = e.local.get(bKey)
+  e.onRead((key) => {
+    if (key === aKey) e.account('b')
+  })
+  await assert.rejects(
+    e.reflections.spendWoolForQuestion('extra', new AbortController().signal),
+    /로그인 정보/,
   )
+  assert.equal(e.local.get(aKey), original)
+  assert.equal(e.local.get(bKey), before)
+})
+
+test('회고를 읽기 시작한 뒤 바뀐 계정의 이전 자료를 결과에 섞지 않는다', async () => {
+  const e = environment()
+  e.account('a')
+  await e.boot()
+  const aKey = e.shared.getMockStorageKey(recordsKey)
+  e.local.set(aKey, JSON.stringify(reflection))
+  const bLegacy = { ...record, drawingId: 82, title: 'B의 회고' }
+  e.local.set(ownerKey, 'moyang:user:b')
+  e.local.set(recordsKey, JSON.stringify([bLegacy]))
+  e.onRead((key) => {
+    if (key === aKey) e.account('b')
+  })
+  assert.deepEqual(plain(e.reflections.readReflections().records), [record])
+  assert.equal(e.local.get(recordsKey), JSON.stringify([bLegacy]))
+})
+
+test('탭 간 잠금이 없으면 두 탭의 차감과 새 회고 저장을 막고 원본은 읽을 수 있다', async () => {
+  const local = new Map([[`${recordsKey}:guest`, JSON.stringify(reflection)]])
+  const a = environment(local)
+  const b = environment(local)
+  a.navigator.locks = undefined
+  b.navigator.locks = undefined
+  const original = [...local]
+  const signal = new AbortController().signal
+  await Promise.all([
+    assert.rejects(a.reflections.spendWoolForQuestion('first', signal), /안전하게/),
+    assert.rejects(b.reflections.spendWoolForQuestion('second', signal), /안전하게/),
+  ])
+  const result = a.load('src/features/drawing-result/resultMock.ts')
+  await assert.rejects(
+    result.saveDrawingResult(
+      {
+        recordId: 94,
+        drawing: { drawingId: 84, title: '새 회고' },
+        card: { todaysStory: '이야기' },
+      },
+      { preview: null, previewWallet: false, fail: false, signal },
+    ),
+    /안전하게/,
+  )
+  assert.equal(a.reflections.getWoolBalance(), 1)
+  assert.deepEqual([...local], original)
+
+  const existing = await result.saveDrawingResult(
+    {
+      drawing: { drawingId: 41, title: '이전 회고' },
+      card: { todaysStory: '이야기' },
+    },
+    { preview: null, previewWallet: false, fail: false, signal },
+  )
+  assert.equal(existing.status, 'already-saved')
+  assert.deepEqual(plain(existing.record), record)
+  assert.deepEqual([...local], original)
 })
 
 test('쓰기 잠금 API가 없는 환경에서도 소유자에게만 이전한다', async () => {
@@ -690,7 +908,7 @@ test('로그인 후 회고를 먼저 읽어도 다른 영역의 계정 일정까
 })
 
 for (const block of ['denySessionReads', 'denySessionAccess']) {
-  test(`${block}: 비로그인 실행 후 로그인해도 로컬 원본의 회고·일정·당일 제한을 읽는다`, async () => {
+  test(`${block}: 비로그인 실행 후 로그인해도 로컬 원본의 회고와 일정을 읽는다`, async () => {
     const e = environment()
     e.local.set(recordsKey, JSON.stringify(reflection))
     e.local.set(programsKey, JSON.stringify([program]))
@@ -702,7 +920,10 @@ for (const block of ['denySessionReads', 'denySessionAccess']) {
     assert.deepEqual(plain(e.reflections.readReflections().records), [record])
     assert.deepEqual(plain(e.programs.readPrograms()), [program])
     const result = e.load('src/features/drawing-result/resultMock.ts')
-    assert.equal(result.getReflectionSaveStatus(e.reflections.readReflections(), 99), 'daily-limit')
+    assert.equal(
+      result.getReflectionSaveStatus(e.reflections.readReflections(), 41),
+      'already-saved',
+    )
     assert.equal(e.reflections.getWoolBalance(), 1)
     await e.settled()
     const reloaded = environment(e.local, new Map())
@@ -800,7 +1021,9 @@ for (const block of ['denySessionReads', 'denySessionAccess']) {
     }
     assert.equal((await result.saveDrawingResult(existing, options())).status, 'already-saved')
     const another = { ...existing, drawing: { drawingId: 99, title: '새 회고' } }
-    assert.equal((await result.saveDrawingResult(another, options())).status, 'daily-limit')
+    const additional = await result.saveDrawingResult(another, options())
+    assert.equal(additional.status, 'saved')
+    assert.equal(additional.sheepEarned, 0)
     await e.reflections.spendWoolForQuestion('paid-after-login', new AbortController().signal)
     assert.equal(e.reflections.getWoolBalance(), 0)
     await e.programs.saveProgramSchedule({
@@ -841,7 +1064,10 @@ for (const block of ['denySessionReads', 'denySessionAccess']) {
     assert.equal(e.session.get(recordsKey), JSON.stringify(reflection))
     e[block](false)
     assert.deepEqual(plain(e.reflections.readReflections().records), [record])
-    assert.equal(result.getReflectionSaveStatus(e.reflections.readReflections(), 99), 'daily-limit')
+    assert.equal(
+      result.getReflectionSaveStatus(e.reflections.readReflections(), 41),
+      'already-saved',
+    )
     await e.settled()
     assert.equal(e.reflections.getWoolBalance(), 1)
   })
@@ -1209,8 +1435,8 @@ for (const owner of [null, 'moyang:user:b']) {
     assert.deepEqual(plain(reopened.programs.readPrograms()), [program])
     const result = reopened.load('src/features/drawing-result/resultMock.ts')
     assert.equal(
-      result.getReflectionSaveStatus(reopened.reflections.readReflections(), 99),
-      'daily-limit',
+      result.getReflectionSaveStatus(reopened.reflections.readReflections(), 41),
+      'already-saved',
     )
     reopened.account('b')
     assert.equal(reopened.reflections.getWoolBalance(), 0)
@@ -1392,7 +1618,7 @@ test('미리보기 결과에서 일정 조회에 실패해도 결과를 열고 �
   assert.deepEqual(plain(preview.records), [])
 })
 
-test('차감 목록이 문자열로 손상됐으면 새로 차감하거나 기간 제한을 초기화하지 않는다', async () => {
+test('차감 목록이 문자열로 손상됐으면 새로 차감하거나 지급 이력을 초기화하지 않는다', async () => {
   const e = environment()
   e.account('a')
   const key = e.shared.getMockStorageKey(recordsKey)
