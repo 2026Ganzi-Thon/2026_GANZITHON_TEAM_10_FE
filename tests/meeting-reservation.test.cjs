@@ -544,6 +544,92 @@ test('booking dates and membership survive a new tab and the next day', async ()
   assert.equal(loaded.participants, 3)
 })
 
+test('a cancelled booking does not pin a renewed mock meeting to its old date', async () => {
+  const e = environment()
+  e.seed()
+  await e.reservation.applyForMeeting('211', signal())
+  const oldStart = e.meetings.getMockMeeting('211').startAt
+  await e.reservation.cancelReservation('211', signal())
+  const renewed = environment(e.values, oldStart + 86400000)
+  const meeting = renewed.meetings.getMockMeeting('211')
+  assert.ok(meeting.startAt > oldStart + 86400000)
+  assert.equal(meeting.membership, undefined)
+  assert.equal(renewed.reflections.getWoolBalance(), 3)
+  assert.equal(renewed.reflections.readReflections().records.length, 3)
+  await renewed.reservation.applyForMeeting('211', signal())
+  const reloaded = environment(e.values, oldStart + 86400000)
+  assert.equal(reloaded.meetings.getMockMeeting('211').startAt, meeting.startAt)
+  assert.equal(reloaded.meetings.getMockMeeting('211').membership, 'participant')
+  assert.equal(reloaded.reflections.getWoolBalance(), 2)
+  await reloaded.reservation.cancelReservation('211', signal())
+  assert.equal(reloaded.reflections.getWoolBalance(), 3)
+})
+
+test('renewing a cancelled mock meeting keeps earlier nonrefundable wool spent', async () => {
+  const e = environment()
+  e.seed()
+  await e.reservation.applyForMeeting('211', signal())
+  const oldStart = e.meetings.getMockMeeting('211').startAt
+  e.time(oldStart - 599999)
+  assert.equal((await e.reservation.cancelReservation('211', signal())).refunded, false)
+  const renewed = environment(e.values, oldStart + 86400000)
+  await renewed.reservation.applyForMeeting('211', signal())
+  assert.equal(renewed.reflections.getWoolBalance(), 1)
+  await renewed.reservation.cancelReservation('211', signal())
+  assert.equal(renewed.reflections.getWoolBalance(), 2)
+})
+
+test('renewed mock dates do not revive a deleted host meeting or move an active booking', async () => {
+  const e = environment()
+  e.seed()
+  await e.reservation.applyForMeeting('211', signal())
+  const original = e.meetings.getMockMeeting('211').startAt
+  await e.reservation.cancelReservation('201', signal())
+  const later = environment(e.values, original + 86400000)
+  assert.equal(later.meetings.getMockMeeting('211').startAt, original)
+  assert.equal(later.meetings.getMockMeeting('211').membership, 'participant')
+  assert.equal(later.meetings.getMockMeeting('201').status, 'cancelled')
+})
+
+test('a default participant can cancel and book a later date without reloading the fixture', async () => {
+  const e = environment()
+  e.seed()
+  const original = e.meetings.getMockMeeting('202')
+  assert.equal((await e.reservation.cancelReservation('202', signal())).refunded, false)
+  e.time(original.startAt + 1)
+  const { meetings, myMeetings } = await e.meetings.loadMeetings({ empty: false, fail: false })
+  const available = meetings.find(({ id }) => id === '202')
+  assert.ok(available.startAt > original.startAt + 1)
+  assert.equal(available.membership, undefined)
+  assert.equal(
+    myMeetings.some(({ id }) => id === '202'),
+    false,
+  )
+  assert.equal(e.reflections.getWoolBalance(), 3)
+  const { meeting } = await e.reservation.applyForMeeting('202', signal())
+  assert.equal(meeting.startAt, available.startAt)
+  assert.equal(meeting.membership, 'participant')
+  assert.equal(e.reflections.getWoolBalance(), 2)
+})
+
+test('an unbooked mock meeting renews on the open list without changing stored bookings', async () => {
+  const e = environment()
+  e.seed()
+  const original = e.meetings.getMockMeeting('211')
+  const booked = e.meetings.getMockMeeting('202')
+  const data = e.values.get(e.reflections.getReflectionStorageKey())
+  e.time(original.startAt)
+  const { meetings } = await e.meetings.loadMeetings({ empty: false, fail: false })
+  const renewed = meetings.find(({ id }) => id === original.id)
+  assert.ok(renewed.startAt > original.startAt)
+  assert.equal(e.meetings.getMockMeeting(original.id).startAt, renewed.startAt)
+  assert.equal(renewed.membership, undefined)
+  assert.equal(e.meetings.getMockMeeting(booked.id).startAt, booked.startAt)
+  assert.equal(e.values.get(e.reflections.getReflectionStorageKey()), data)
+  e.time(renewed.startAt)
+  assert.ok(e.meetings.getMockMeeting(original.id).startAt > renewed.startAt)
+})
+
 test('bookings from other preview lists are still visible in My meetings after reload', async () => {
   const e = environment()
   e.seed()
