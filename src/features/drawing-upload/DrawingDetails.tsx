@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Input, PageHeader } from '@/components'
 import { apiClient } from '@/lib/api-client'
+import { getMockPreviewRecordId } from '@/lib/mock-reflections'
 import previewImage from '@/assets/drawing/drawing-2.png'
 import styles from './DrawingDetails.module.css'
 
@@ -29,13 +30,20 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
   const location = useLocation()
   const data = location.state as {
     photo?: Blob
+    previewPhoto?: { bytes: ArrayBuffer; type: string }
     inputType?: 'PHOTO' | 'UPLOAD' | 'CANVAS'
     topic?: { topicId: number }
     uploaded?: UploadedDrawing
     draft?: { title: string; note: string }
     draftId?: string
   } | null
-  const photo = flow ? flow.photo : data?.photo
+  const pickedPhoto = flow?.photo ?? data?.photo
+  const previewPhoto = data?.previewPhoto
+  const photo = useMemo(
+    () =>
+      pickedPhoto ?? (previewPhoto && new Blob([previewPhoto.bytes], { type: previewPhoto.type })),
+    [pickedPhoto, previewPhoto],
+  )
   const uploaded = flow
     ? undefined
     : (data?.uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined))
@@ -137,9 +145,18 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
     try {
       const draft = { title: title.trim(), note: currentUpload?.note ?? thought.trim() }
       const draftId = data?.draftId ?? crypto.randomUUID()
+      const detailsState = { ...data, draft, draftId, uploaded: currentUpload }
+      if (isPreview && pickedPhoto instanceof Blob) {
+        detailsState.previewPhoto = {
+          bytes: await pickedPhoto.arrayBuffer(),
+          type: pickedPhoto.type,
+        }
+        detailsState.photo = undefined
+      }
+      if (!active.current) return
       await navigate(`${location.pathname}${location.search}`, {
         replace: true,
-        state: { ...data, draft, draftId, uploaded: currentUpload },
+        state: detailsState,
       })
       if (!active.current) return
       let drawingId = currentUpload?.drawingId ?? 0
@@ -198,6 +215,12 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
       navigate(`/drawing/conversation${isPreview ? '?preview' : ''}`, {
         state: {
           ...data,
+          ...(isPreview &&
+            photo instanceof Blob && {
+              photo: undefined,
+              previewPhoto: undefined,
+              recordId: getMockPreviewRecordId(draftId),
+            }),
           drawing: {
             drawingId,
             title: title.trim(),

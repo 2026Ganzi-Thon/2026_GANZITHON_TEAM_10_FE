@@ -22,6 +22,14 @@ export const isRecordId = (id: unknown): id is RecordId =>
 
 export const getMockRecordId = (drawingId: number): RecordId => `mock-drawing:${drawingId}`
 
+const previewRecordPrefix = 'mock-preview:'
+
+export const getMockPreviewRecordId = (draftId: string): RecordId =>
+  `${previewRecordPrefix}${draftId}`
+
+const canMatchLegacyDrawing = (recordId: RecordId) =>
+  typeof recordId === 'number' || !recordId.startsWith(previewRecordPrefix)
+
 export type MockRecord = {
   recordId?: RecordId
   drawingId: number
@@ -169,7 +177,11 @@ export const findSavedReflection = (
   drawingId: number,
 ) =>
   store.records.find((record) => record.recordId === recordId) ??
-  store.records.find((record) => record.recordId === undefined && record.drawingId === drawingId)
+  (canMatchLegacyDrawing(recordId)
+    ? store.records.find(
+        (record) => record.recordId === undefined && record.drawingId === drawingId,
+      )
+    : undefined)
 
 export const hasSavedReflection = (
   store: MockReflectionStore,
@@ -177,7 +189,8 @@ export const hasSavedReflection = (
   drawingId: number,
 ) =>
   Boolean(findSavedReflection(store, recordId, drawingId)) ||
-  (store.completedDrawingIds.includes(drawingId) &&
+  (canMatchLegacyDrawing(recordId) &&
+    store.completedDrawingIds.includes(drawingId) &&
     !store.records.some((record) => record.drawingId === drawingId))
 
 export const getWoolBalance = (store = readReflections()) => {

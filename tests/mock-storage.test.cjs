@@ -497,6 +497,44 @@ test('같은 날 두 번째 회고를 저장하고 KST 자정 이후에는 새�
   assert.equal(e.reflections.getWoolBalance(), 2)
 })
 
+for (const hasLegacyRecord of [false, true]) {
+  test(`미리보기는 기존 ${hasLegacyRecord ? '회고 본문을' : '완료 표시를'} 보존하고 초안별로 한 번만 저장한다`, async () => {
+    const e = environment()
+    const result = e.load('src/features/drawing-result/resultMock.ts')
+    const records = hasLegacyRecord ? [{ ...record, drawingId: 0 }] : []
+    e.reflections.writeReflections({ records, completedDrawingIds: [0] })
+    assert.equal(
+      result.getReflectionSaveStatus(e.reflections.readReflections(), 0),
+      'already-saved',
+    )
+
+    const firstId = e.reflections.getMockPreviewRecordId('first-draft')
+    const secondId = e.reflections.getMockPreviewRecordId('second-draft')
+    const save = (recordId, title) =>
+      result.saveDrawingResult(
+        { recordId, drawing: { drawingId: 0, title }, card: { todaysStory: title } },
+        { preview: null, previewWallet: false, fail: false, signal: new AbortController().signal },
+      )
+    const [first, retry, second] = await Promise.all([
+      save(firstId, '첫 그림'),
+      save(firstId, '첫 그림 재시도'),
+      save(secondId, '두 번째 그림'),
+    ])
+    assert.equal(first.status, 'saved')
+    assert.equal(first.sheepEarned, hasLegacyRecord ? 0 : 1)
+    assert.equal(retry.status, 'already-saved')
+    assert.equal(second.status, 'saved')
+    assert.equal(second.sheepEarned, 0)
+    assert.deepEqual(plain(e.reflections.readReflections().records), [
+      ...records,
+      plain(first.record),
+      plain(second.record),
+    ])
+    assert.equal(retry.record.title, '첫 그림')
+    assert.equal(e.reflections.getWoolBalance(), 1)
+  })
+}
+
 test('종합 이야기와 그림 메모, 대화에서 떠올린 생각을 기록 ID와 함께 저장한다', async () => {
   const e = environment()
   const result = e.load('src/features/drawing-result/resultMock.ts')
