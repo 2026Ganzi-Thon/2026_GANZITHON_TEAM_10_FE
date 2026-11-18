@@ -33,7 +33,7 @@ import { assertCurrentDrawing, openDrawingDraftChannel, readDrawingDraft } from 
 import { SavedDrawingImage } from './SavedDrawingImage'
 import { maskMeetingText, phaseLabels, phasePrompts } from './chatContent'
 import { useDraftNavigation } from './useDraftNavigation'
-import { getChatReadTime, prepareChatPreview } from './chatPreview'
+import { getChatReadTime, getNextMockPeerMessage, prepareChatPreview } from './chatPreview'
 import { ChatGuide } from './ChatGuide'
 import { ChatMessage } from './ChatMessage'
 import { DrawingModal } from './DrawingModal'
@@ -467,10 +467,12 @@ const ChatScreen = ({
     }
   }
 
+  const chatReady = chat !== null
   useEffect(() => {
-    if (offline || !navigator.onLine || loadError || expired || !initialized.current) return
+    if (!chatReady || offline || !navigator.onLine || loadError || expired || !initialized.current)
+      return
     const controller = new AbortController()
-    const canSimulate = () => navigator.onLine && canParticipate()
+    const canSimulate = () => current() && navigator.onLine && canParticipate()
     const simulate = async () => {
       let next: Chat | null
       try {
@@ -479,6 +481,7 @@ const ChatScreen = ({
         return
       }
       if (!next || next.endedAt !== null) return
+      const initial = next
       if (
         next.phase === 'INTRO' &&
         next.moderatorId !== 'me' &&
@@ -552,14 +555,16 @@ const ChatScreen = ({
             controller.signal,
           )
       }
-      if (current() && !controller.signal.aborted) setChat(next)
+      const peerMessage = getNextMockPeerMessage(context.scenario, next, now)
+      if (peerMessage) await updateMeetingChat(context, peerMessage, canSimulate, controller.signal)
+      if ((peerMessage || next !== initial) && current() && !controller.signal.aborted) refresh()
     }
     void simulate().catch((cause) => {
       if (current() && navigator.onLine && !controller.signal.aborted)
         setError(getMeetingChatError(cause, '모임 상태를 갱신하지 못했어요.'))
     })
     return () => controller.abort()
-  }, [now, offline, loadError, expired, context, canParticipate, current])
+  }, [chatReady, now, offline, loadError, expired, context, canParticipate, current, refresh])
 
   if (expired) return <ExpiredChatNotice context={context} onBack={onBack} />
   if (!chat || loadError)

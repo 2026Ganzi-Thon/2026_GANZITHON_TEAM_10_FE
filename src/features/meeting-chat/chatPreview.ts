@@ -4,7 +4,52 @@ import {
   readMeetingChat,
   updateMeetingChat,
 } from './chatMock'
-import type { ChatStorageContext, MeetingChat } from './chatMock'
+import type { ChatCommand, ChatStorageContext, MeetingChat } from './chatMock'
+
+const peerMessages = {
+  INTRO: '안녕하세요! 저는 산책을 좋아해서 강아지가 떠올랐어요.',
+  DRAWING: null,
+  SHARING: '저는 그림에 오늘 산책하면서 본 하늘을 담았어요.',
+  CLOSING: '오늘 그림이랑 이야기 나눌 수 있어서 좋았어요.',
+}
+
+export const getNextMockPeerMessage = (
+  scenario: ChatStorageContext['scenario'],
+  chat: MeetingChat,
+  now: number,
+): Extract<ChatCommand, { type: 'send' }> | null => {
+  const { phase, messages } = chat
+  if (scenario?.startsWith('chat-') || chat.endedAt !== null || chat.endAgreedIds.length > 0)
+    return null
+
+  const peer = chat.participants.find(({ id }) => id !== 'me')
+  const phaseStart = messages.find(
+    (message) =>
+      message.type === 'SYSTEM' &&
+      (message.event === 'STARTED' || message.event === 'PHASE_CHANGED') &&
+      message.phase === phase,
+  )
+  if (!peer || !phaseStart) return null
+
+  const hasMessage = (requestId: string) =>
+    messages.some((message) => message.type !== 'SYSTEM' && message.requestId === requestId)
+  const send = (requestId: string, content: string) =>
+    ({ type: 'send', phase, requestId, participantId: peer.id, content }) as const
+  const phaseMessageId = `mock-peer-text:${phase}`
+  const phaseMessage = peerMessages[phase]
+  if (phaseMessage && !hasMessage(phaseMessageId)) return send(phaseMessageId, phaseMessage)
+
+  const replyId = `${phaseMessageId}:reply`
+  const ownMessage = messages.find(
+    (message) =>
+      message.type === 'TEXT' &&
+      message.participantId === 'me' &&
+      message.messageId > phaseStart.messageId,
+  )
+  if (ownMessage && now >= ownMessage.createdAt + 1500 && !hasMessage(replyId))
+    return send(replyId, '얘기 들려줘서 고마워요.')
+  return null
+}
 
 export const getChatReadTime = (context: ChatStorageContext, now: number) => {
   if (context.scenario === 'chat-expired') return now + chatHistoryDuration + 1
