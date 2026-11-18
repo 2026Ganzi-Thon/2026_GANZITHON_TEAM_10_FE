@@ -55,6 +55,7 @@ const DrawingFlowScreen = ({ context, step }: { context: ChatStorageContext; ste
   const routeKey = useRef(location.key)
   const saved = useRef<MeetingDrawingDraft | null>(null)
   const queue = useRef<Promise<unknown>>(Promise.resolve())
+  const returnRequest = useRef<symbol | null>(null)
   const failedPatch = useRef<DrawingDraftPatch>({})
   const displayedFields = useRef({ title: '', note: '' })
   const syncFields = useRef(false)
@@ -440,6 +441,10 @@ const DrawingFlowScreen = ({ context, step }: { context: ChatStorageContext; ste
   if (step === 'details' && !draft.photo)
     return <Navigate to={pathFor('choose')} replace state={location.state} />
   const back = () => setConfirmation(true)
+  const continueDrawing = () => {
+    returnRequest.current = null
+    setConfirmation(false)
+  }
 
   return (
     <>
@@ -532,15 +537,26 @@ const DrawingFlowScreen = ({ context, step }: { context: ChatStorageContext; ste
       <Modal
         isOpen={confirmation}
         title="모임으로 돌아갈까요?"
-        onClose={() => setConfirmation(false)}
+        onClose={continueDrawing}
         actions={[
-          { label: '계속 그리기', color: 'gray', onClick: () => setConfirmation(false) },
+          { label: '계속 그리기', color: 'gray', onClick: continueDrawing },
           {
             label: '모임으로 돌아가기',
             onClick: () => {
+              const id = Symbol()
+              returnRequest.current = id
+              const key = location.key
               const version = pageVersion.current
               void queue.current.then(() => {
-                if (current() && version === pageVersion.current && !saveFailure.current) goChat()
+                if (returnRequest.current !== id) return
+                returnRequest.current = null
+                if (
+                  current() &&
+                  key === routeKey.current &&
+                  version === pageVersion.current &&
+                  !saveFailure.current
+                )
+                  goChat()
               })
             },
           },
