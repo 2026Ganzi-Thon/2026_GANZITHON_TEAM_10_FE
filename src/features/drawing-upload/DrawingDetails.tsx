@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Input, PageHeader } from '@/components'
 import { useMockStorageScope } from '@/hooks/useMockStorageScope'
-import { apiClient } from '@/lib/api-client'
+import { apiClient, getAccessToken } from '@/lib/api-client'
 import { getMockPreviewRecordId } from '@/lib/mock-reflections'
 import { getMockStorageScope } from '@/lib/mock-storage'
 import previewImage from '@/assets/drawing/drawing-2.png'
@@ -31,6 +31,7 @@ type DetailsFlow = {
 // 화면을 떠난 뒤 완료된 업로드도 같은 그림으로 돌아오면 재사용한다.
 const completedUploads = new Map<string, UploadedDrawing>()
 const pendingUploads = new Map<string, Promise<UploadedDrawing>>()
+const getUploadKey = (scope: string, draftId: string) => JSON.stringify([scope, draftId])
 
 /** 선택한 그림을 확인하고 제목과 떠오른 생각을 입력한다. */
 export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
@@ -55,9 +56,10 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
       pickedPhoto ?? (previewPhoto && new Blob([previewPhoto.bytes], { type: previewPhoto.type })),
     [pickedPhoto, previewPhoto],
   )
+  const uploadKey = storageScope && data?.draftId ? getUploadKey(storageScope, data.draftId) : null
   const uploaded = flow
     ? undefined
-    : (data?.uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined))
+    : (data?.uploaded ?? (uploadKey ? completedUploads.get(uploadKey) : undefined))
   const uploadedRecordId = uploaded?.recordId ?? uploaded?.activityId
   const isPreview =
     !flow && import.meta.env.DEV && new URLSearchParams(location.search).has('preview')
@@ -136,8 +138,7 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
       }
       return
     }
-    const currentUpload =
-      uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined)
+    const currentUpload = uploaded ?? (uploadKey ? completedUploads.get(uploadKey) : undefined)
     const currentRecordId = currentUpload?.recordId ?? currentUpload?.activityId
     if (currentUpload && (!isValidId(currentUpload.drawingId) || !isValidId(currentRecordId))) {
       setNotice(
@@ -180,17 +181,21 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
       let drawingId = currentUpload?.drawingId ?? 0
       let recordId = currentRecordId
       if (!isPreview && !currentUpload && data?.topic && data.inputType && photo instanceof Blob) {
+        const token = getAccessToken()
+        if (getMockStorageScope(token) !== storageScope) return
         const body = new FormData()
         body.append('image', photo, photo instanceof File ? photo.name : 'drawing.jpg')
         body.append('inputType', data.inputType)
         body.append('topicId', String(data.topic.topicId))
         if (thought.trim()) body.append('note', thought.trim())
-        let upload = pendingUploads.get(draftId)
+        const key = getUploadKey(storageScope, draftId)
+        let upload = pendingUploads.get(key)
         if (!upload) {
           upload = apiClient
             .post<{ success: boolean; data: { drawingId: number; recordId: number } }>(
               '/api/drawings',
               body,
+              { headers: { Authorization: token ? `Bearer ${token}` : false } },
             )
             .then((response) => {
               if (!response.data.success) throw new Error('upload failed')
@@ -200,11 +205,11 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
                 recordId: isValidId(result?.recordId) ? result.recordId : undefined,
                 ...draft,
               }
-              completedUploads.set(draftId, saved)
+              completedUploads.set(key, saved)
               return saved
             })
-            .finally(() => pendingUploads.delete(draftId))
-          pendingUploads.set(draftId, upload)
+            .finally(() => pendingUploads.delete(key))
+          pendingUploads.set(key, upload)
         }
         const saved = await upload
         draft.note = saved.note
@@ -237,6 +242,7 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
           }),
           drawing: {
             drawingId,
+            topicId: data?.topic?.topicId,
             title: title.trim(),
             note: draft.note,
             imageUrl: photo instanceof Blob ? undefined : previewImage,

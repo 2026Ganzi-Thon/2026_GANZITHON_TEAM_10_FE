@@ -19,6 +19,7 @@ import type {
   ConversationDrawing,
 } from '@/features/drawing-conversation/conversationMock'
 import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
+import { getToday } from '@/features/personal-program/programSchedule'
 import {
   applyProgramActivityCompletion,
   canCompleteProgramActivity,
@@ -47,7 +48,6 @@ type SaveOutcome =
   | { status: 'progress-pending'; sheepEarned: 0 | 1; record: MockRecord }
   | { status: 'activity-unavailable' }
 
-const recordDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' })
 const skippedReplies = [getReplyText({ type: 'DONT_KNOW' }), getReplyText({ type: 'SKIP' })]
 
 const getActivityKey = ({ programId, round }: ProgramActivityHandoff) => `${programId}:${round}`
@@ -85,7 +85,7 @@ export const createReflectionPreview = (
   if (scenario === 'additional-save' || scenario === 'already-saved') {
     const drawingId = scenario === 'already-saved' ? exampleDrawing.drawingId : -1
     return {
-      records: [{ drawingId, recordDate: recordDate.format(new Date()), sheepReward: 1 }],
+      records: [{ drawingId, recordDate: getToday(), sheepReward: 1 }],
       completedDrawingIds: [drawingId],
     }
   }
@@ -187,8 +187,8 @@ export const saveDrawingResult = async (
     if (accountKey !== getReflectionStorageKey(previewWallet))
       throw new Error('로그인 정보가 변경됐어요')
   }
-  const readStore = () => {
-    const store = preview ?? readReflectionStore(accountKey)
+  const readStore = (forWrite = false) => {
+    const store = preview ?? readReflectionStore(accountKey, forWrite)
     assertAccount()
     return store
   }
@@ -209,9 +209,9 @@ export const saveDrawingResult = async (
     if (import.meta.env.DEV && preview && activity?.mock && hasCompletedPreviewActivity(activity)) {
       return { status: 'already-saved' }
     }
-    const store = readStore()
+    const store = readStore(true)
     const { records, completedDrawingIds } = store
-    const today = recordDate.format(new Date())
+    const today = getToday()
     const existing = activity
       ? records.find((record) => isActivityRecord(record, activity))
       : findSavedReflection(store, recordId, drawingId)

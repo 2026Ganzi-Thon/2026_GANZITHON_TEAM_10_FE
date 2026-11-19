@@ -63,6 +63,18 @@ const previewRecordsKey = `${recordsKey}:wool-preview`
 export const getReflectionStorageKey = (preview = false) =>
   getMockStorageKey(preview ? previewRecordsKey : recordsKey)
 
+const normalizeRecordDate = (value: string) => {
+  const legacy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value)
+  const date = legacy
+    ? `${legacy[3]}-${legacy[1].padStart(2, '0')}-${legacy[2].padStart(2, '0')}`
+    : value
+  const parsed = new Date(`${date}T00:00:00Z`)
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new MockStorageUnavailableError()
+  }
+  return date
+}
+
 const parseReflections = (saved: string): MockReflectionStore => {
   let data: MockReflectionStore | MockRecord[] | null
   try {
@@ -70,10 +82,10 @@ const parseReflections = (saved: string): MockReflectionStore => {
   } catch {
     throw new MockStorageUnavailableError()
   }
-  const records = Array.isArray(data) ? data : data?.records
+  const rawRecords = Array.isArray(data) ? data : data?.records
   if (
-    !Array.isArray(records) ||
-    records.some(
+    !Array.isArray(rawRecords) ||
+    rawRecords.some(
       (record) =>
         !record ||
         !Number.isInteger(record.drawingId) ||
@@ -86,6 +98,10 @@ const parseReflections = (saved: string): MockReflectionStore => {
   ) {
     throw new MockStorageUnavailableError()
   }
+  const records = rawRecords.map((record) => ({
+    ...record,
+    recordDate: normalizeRecordDate(record.recordDate),
+  }))
   if (Array.isArray(data))
     return { records, completedDrawingIds: records.map(({ drawingId }) => drawingId) }
   if (
@@ -120,9 +136,10 @@ const parseReflections = (saved: string): MockReflectionStore => {
   ) {
     throw new Error('저장된 모임 신청 정보를 확인할 수 없어요')
   }
-  if (!reservations) return data
+  if (!reservations) return { ...data, records }
   return {
     ...data,
+    records,
     meetingReservations: Object.fromEntries(
       Object.entries(reservations).map(([id, reservation]) => [
         id,
@@ -159,8 +176,8 @@ export const migrateLegacyReflections = (accountSuffix: string) => {
   migrateLegacyMockKey(previewRecordsKey, accountSuffix, parseReflections, mergeReflections)
 }
 
-export const readReflectionStore = (key: string): MockReflectionStore =>
-  readMockStorage(key, parseReflections) ?? {
+export const readReflectionStore = (key: string, forWrite = false): MockReflectionStore =>
+  readMockStorage(key, parseReflections, forWrite) ?? {
     records: [],
     completedDrawingIds: [],
   }
@@ -229,7 +246,7 @@ export const updateMeetingReservation = <T>(
     if (local !== null && session !== null && local !== session) {
       throw new Error('저장된 모임 신청 정보를 다시 확인해 주세요.')
     }
-    const store = readReflectionStore(key)
+    const store = readReflectionStore(key, true)
     const { result, reservation } = update(store)
     if (key !== getReflectionStorageKey()) throw new Error('로그인 정보가 변경됐어요.')
     if (reservation) {
@@ -251,7 +268,7 @@ export const spendWoolForQuestion = async (
   const key = getReflectionStorageKey(preview)
   return withReflectionLock(signal, () => {
     if (key !== getReflectionStorageKey(preview)) throw new Error('로그인 정보가 변경됐어요')
-    const store = readReflectionStore(key)
+    const store = readReflectionStore(key, true)
     if (key !== getReflectionStorageKey(preview)) throw new Error('로그인 정보가 변경됐어요')
     const paidQuestions = store.paidQuestions ?? []
     if (paidQuestions.includes(questionId)) return true

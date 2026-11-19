@@ -1,7 +1,12 @@
 const legacyOwnerKey = 'moyang:mock-storage-legacy-owner'
 const legacyReaders = new Map<
   string,
-  (local: string | null, session: string | null, suffix: string) => string | undefined
+  (
+    local: string | null,
+    session: string | null,
+    suffix: string,
+    forWrite: boolean,
+  ) => string | undefined
 >()
 const legacyMigrations = new Map<string, (accountSuffix: string) => void>()
 const migratingKeys = new Set<string>()
@@ -13,8 +18,7 @@ export class MockStorageUnavailableError extends Error {
   }
 }
 
-const getAccountSuffix = () => {
-  const token = localStorage.getItem('moyang.accessToken')
+const getAccountSuffix = (token = localStorage.getItem('moyang.accessToken')) => {
   if (!token) return ''
 
   const payload = token.split('.')[1]
@@ -51,23 +55,28 @@ const backupSession = (sourceKey: string, prefix: string, keepLatest = false) =>
     const saved = readSessionStorage(sourceKey)
     if (saved === null) return
     let timestamp = Date.now()
-    let latestTime = 0
-    let matchingTime = -1
+    let matchingKey: string | undefined
+    const tabKey = `${prefix}last-backup`
+    const previousBackup = keepLatest ? readSessionStorage(tabKey) : null
     for (let index = 0; index < localStorage.length; index += 1) {
       const backupKey = localStorage.key(index)
       if (!backupKey?.startsWith(prefix)) continue
       const previousTime = Number(backupKey.slice(prefix.length).split(':')[0])
-      const savedTime = Number.isFinite(previousTime) ? previousTime : 0
       if (localStorage.getItem(backupKey) === saved) {
-        matchingTime = Math.max(matchingTime, savedTime)
+        if (backupKey === previousBackup) return
+        matchingKey = backupKey
       }
-      latestTime = Math.max(latestTime, savedTime)
       if (Number.isFinite(previousTime)) {
         timestamp = Math.max(timestamp, previousTime + 1)
       }
     }
-    if (matchingTime >= 0 && (!keepLatest || matchingTime === latestTime)) return
-    localStorage.setItem(`${prefix}${timestamp}:${crypto.randomUUID()}`, saved)
+    if (matchingKey && (!keepLatest || !previousBackup)) {
+      if (keepLatest) sessionStorage.setItem(tabKey, matchingKey)
+      return
+    }
+    const backupKey = `${prefix}${timestamp}:${crypto.randomUUID()}`
+    localStorage.setItem(backupKey, saved)
+    if (keepLatest) sessionStorage.setItem(tabKey, backupKey)
   } catch {
     // 백업에 실패해도 세션 원본은 삭제하지 않는다.
   }
@@ -115,20 +124,24 @@ export const withMockStorageLock = async <T>(
   return navigator.locks.request(mockStorageLock, { signal }, applyUpdate)
 }
 
-export const getMockStorageScope = () => {
+export const getMockStorageScope = (token?: string | null) => {
   try {
-    return `moyang${getAccountSuffix()}`
+    return `moyang${getAccountSuffix(token)}`
   } catch {
     return null
   }
 }
 
 export const writeMockStorage = (key: string, data: unknown) => {
-  if (localStorage.getItem(key) === null) readSessionStorage(key)
+  readSessionStorage(key)
   localStorage.setItem(key, JSON.stringify(data))
 }
 
-export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T | null => {
+export const readMockStorage = <T>(
+  key: string,
+  parse: (saved: string) => T,
+  forWrite = false,
+): T | null => {
   const suffix = getAccountSuffix()
   const accountSuffix = suffix || ':guest'
   const readLegacy = key.endsWith(accountSuffix)
@@ -137,14 +150,15 @@ export const readMockStorage = <T>(key: string, parse: (saved: string) => T): T 
   const local = localStorage.getItem(key)
   let session: string | null = null
   let sessionUnavailable = false
-  if (local === null || readLegacy) {
+  if (local === null || readLegacy || forWrite) {
     try {
       session = readSessionStorage(key)
-    } catch {
+    } catch (error) {
+      if (forWrite) throw error
       sessionUnavailable = true
     }
   }
-  const saved = readLegacy?.(local, session, suffix) ?? local ?? session
+  const saved = readLegacy?.(local, session, suffix, forWrite) ?? local ?? session
   if (saved === null && sessionUnavailable) throw new MockStorageUnavailableError()
   if (saved === null) return null
 
@@ -184,10 +198,22 @@ export const migrateLegacyMockKey = <T>(
   parse: (saved: string) => T,
   merge: (current: T, legacy: T) => T,
 ) => {
-  const readSources = (suffix: string, requireReadable = false) => {
+  const readSources = (
+    suffix: string,
+    {
+      hasCurrent,
+      forWrite = false,
+      requireAccess = forWrite,
+    }: {
+      hasCurrent: boolean
+      forWrite?: boolean
+      requireAccess?: boolean
+    },
+  ) => {
     const sources: { storage: Storage; key: string; saved: string; data: T }[] = []
     let unavailable = false
-    let unreadableBackup = false
+    let damagedOriginal = false
+    let damagedBackup = false
     const readBackups = (sourceKey: string) => {
       const prefix = ownedSessionPrefix(sourceKey, `moyang${suffix}`)
       const backupKeys: string[] = []
@@ -202,25 +228,39 @@ export const migrateLegacyMockKey = <T>(
             sources.push({ storage: localStorage, key: backupKey, saved, data: parse(saved) })
           }
         } catch {
-          unreadableBackup = true
+          damagedBackup = true
         }
       }
     }
     readBackups(keyWithAccount(key, suffix))
     if (localStorage.getItem(legacyOwnerKey) === `moyang${suffix}`) {
       for (const getStorage of [() => localStorage, () => sessionStorage]) {
+        let storage: Storage
+        let saved: string | null
         try {
-          const storage = getStorage()
-          const saved = storage.getItem(key)
-          if (saved !== null) sources.push({ storage, key, saved, data: parse(saved) })
+          storage = getStorage()
+          saved = storage.getItem(key)
         } catch {
           unavailable = true
+          continue
+        }
+        if (saved === null) continue
+        try {
+          sources.push({ storage, key, saved, data: parse(saved) })
+          hasCurrent = true
+        } catch {
+          damagedOriginal = true
         }
       }
     }
     readBackups(key)
-    if (unreadableBackup) throw new MockStorageUnavailableError()
-    if (requireReadable && unavailable && !sources.length) throw new MockStorageUnavailableError()
+    if (
+      (requireAccess && (unavailable || damagedBackup)) ||
+      (forWrite && damagedOriginal) ||
+      (!hasCurrent && (damagedBackup || ((unavailable || damagedOriginal) && !sources.length)))
+    ) {
+      throw new MockStorageUnavailableError()
+    }
     return sources
   }
 
@@ -233,15 +273,15 @@ export const migrateLegacyMockKey = <T>(
   const migrateForAccount = (suffix: string) => {
     try {
       if (getAccountSuffix() !== suffix) return
-      const sources = suffix ? readSources(suffix) : []
       const scopedKey = keyWithAccount(key, suffix)
       const local = localStorage.getItem(scopedKey)
-      let session: string | null = null
-      try {
-        session = readSessionStorage(scopedKey)
-      } catch (error) {
-        if (local === null) throw error
-      }
+      const session = readSessionStorage(scopedKey)
+      const sources = suffix
+        ? readSources(suffix, {
+            hasCurrent: local !== null || session !== null,
+            requireAccess: true,
+          })
+        : []
       if (session !== null) {
         sources.unshift({
           storage: sessionStorage,
@@ -252,8 +292,11 @@ export const migrateLegacyMockKey = <T>(
       }
       if (!sources.length) return
       const migrated = mergeSources(local, sources)
+      if (getAccountSuffix() !== suffix) return
       writeMockStorage(scopedKey, migrated)
       for (const { storage, key: sourceKey, saved } of sources) {
+        if (sourceKey === key && localStorage.getItem(legacyOwnerKey) !== `moyang${suffix}`)
+          continue
         if (storage.getItem(sourceKey) === saved) storage.removeItem(sourceKey)
       }
     } catch {
@@ -262,15 +305,31 @@ export const migrateLegacyMockKey = <T>(
   }
 
   legacyMigrations.set(key, migrateForAccount)
-  legacyReaders.set(key, (local, session, suffix) => {
-    const sources = suffix ? readSources(suffix, local === null && session === null) : []
+  legacyReaders.set(key, (local, session, suffix, forWrite) => {
+    const sources = suffix
+      ? readSources(suffix, { hasCurrent: local !== null || session !== null, forWrite })
+      : []
     if (!sources.length && session === null) return
+    let sessionData: T | null = null
+    if (session !== null) {
+      try {
+        sessionData = parse(session)
+      } catch (error) {
+        if (
+          forWrite ||
+          (local === null &&
+            !sources.some(
+              ({ storage, key: sourceKey }) => storage === localStorage && sourceKey === key,
+            ))
+        ) {
+          throw error
+        }
+      }
+    }
     const current =
-      local === null
-        ? session
-        : session === null
-          ? local
-          : JSON.stringify(merge(parse(local), parse(session)))
+      local !== null && sessionData !== null
+        ? JSON.stringify(merge(parse(local), sessionData))
+        : (local ?? (sessionData !== null ? session : null))
     const merged = JSON.stringify(mergeSources(current, sources))
     const scopedKey = keyWithAccount(key, suffix)
     if (!migratingKeys.has(scopedKey)) {

@@ -138,15 +138,36 @@ export const migrateLegacyPrograms = (accountSuffix: string) => {
       unscopedKeyFor(scenario),
       accountSuffix,
       parsePrograms,
-      (current, legacy) => [
-        ...new Map([...legacy, ...current].map((program) => [program.id, program])).values(),
-      ],
+      (current, legacy) => {
+        const programs = new Map(legacy.map((program) => [program.id, program]))
+        for (const program of current) {
+          const previous = programs.get(program.id)
+          if (!previous) {
+            programs.set(program.id, program)
+            continue
+          }
+          const completed = Math.max(program.completed, previous.completed)
+          const cancelled = program.cancelled || previous.cancelled
+          let nextDate = program.nextDate
+          if (cancelled || completed >= rounds.length) nextDate = null
+          else if (
+            completed > program.completed &&
+            previous.nextDate &&
+            nextDate &&
+            previous.nextDate > nextDate
+          ) {
+            nextDate = getNextActivityDate(program.days, previous.nextDate, true)
+          }
+          programs.set(program.id, { ...program, completed, cancelled, nextDate })
+        }
+        return [...programs.values()]
+      },
     )
   }
 }
 
-const readProgramStore = (key: string, scenario?: Scenario) =>
-  readMockStorage(key, parsePrograms) ?? examplePrograms(scenario)
+const readProgramStore = (key: string, scenario?: Scenario, forWrite = false) =>
+  readMockStorage(key, parsePrograms, forWrite) ?? examplePrograms(scenario)
 
 export const readPrograms = (scenario?: Scenario): PersonalProgram[] =>
   readProgramStore(getProgramStorageKey(scenario), scenario)
@@ -190,7 +211,7 @@ export const saveProgramSchedule = async ({
     unscopedKeyFor(scenario),
     () => {
       assertProgramAccount(accountKey, scenario)
-      const programs = readProgramStore(accountKey, scenario)
+      const programs = readProgramStore(accountKey, scenario, true)
       const program = programId
         ? programs.find(({ id }) => id === programId)
         : getProgramForReflection(programs, reflection)
@@ -230,7 +251,7 @@ export const cancelProgramSchedule = async (
     unscopedKeyFor(scenario),
     () => {
       assertProgramAccount(accountKey, scenario)
-      const programs = readProgramStore(accountKey, scenario)
+      const programs = readProgramStore(accountKey, scenario, true)
       const program = programs.find((item) => item.id === id)
       if (!program || program.cancelled || program.completed >= rounds.length) return
       storePrograms(
@@ -254,7 +275,7 @@ export const canCompleteProgramActivity = (
   accountKey = getProgramStorageKey(scenario),
 ) => {
   assertProgramAccount(accountKey, scenario)
-  return readProgramStore(accountKey, scenario).some(
+  return readProgramStore(accountKey, scenario, true).some(
     (program) =>
       program.id === activity.programId && isScheduledActivity(program, activity, getToday()),
   )
@@ -267,7 +288,7 @@ export const applyProgramActivityCompletion = (
   accountKey = getProgramStorageKey(scenario),
 ) => {
   assertProgramAccount(accountKey, scenario)
-  const programs = readProgramStore(accountKey, scenario)
+  const programs = readProgramStore(accountKey, scenario, true)
   const program = programs.find(({ id }) => id === activity.programId)
   if (!program) return false
   if (program.completed >= activity.round) return true

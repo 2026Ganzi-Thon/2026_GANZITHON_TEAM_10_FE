@@ -1,4 +1,4 @@
-import { apiClient } from '@/lib/api-client'
+import { apiClient, getAccessToken } from '@/lib/api-client'
 import type { ProgramConcern } from '@/features/personal-program/programSchedule'
 
 type UserResponse = {
@@ -14,7 +14,9 @@ type OptionsResponse = {
 export const loadProgramConcern = async (
   signal: AbortSignal,
 ): Promise<ProgramConcern | undefined> => {
-  const { data: profile } = await apiClient.get<UserResponse>('/api/users/me', { signal })
+  const token = getAccessToken()
+  const headers = { Authorization: token ? `Bearer ${token}` : false }
+  const { data: profile } = await apiClient.get<UserResponse>('/api/users/me', { headers, signal })
   const onboarding = profile.success ? profile.data?.onboarding : null
   if (!onboarding?.themeCode) return
 
@@ -25,6 +27,7 @@ export const loadProgramConcern = async (
   }
 
   const { data: options } = await apiClient.get<OptionsResponse>('/api/onboarding/options', {
+    headers,
     signal,
   })
   const theme = options.success

@@ -1,5 +1,6 @@
 export type ConversationDrawing = {
   drawingId: number
+  topicId?: number
   title: string
   imageUrl?: string
   previewPhoto?: { bytes: ArrayBuffer; type: string }

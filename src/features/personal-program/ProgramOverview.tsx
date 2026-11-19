@@ -143,9 +143,11 @@ export const PersonalProgramHomeCard = ({
 export const PersonalProgramHomeSection = ({
   programs,
   getProgramLink,
+  onRetry,
 }: {
-  programs?: PersonalProgram[]
+  programs?: PersonalProgram[] | null
   getProgramLink?: (programId: string) => string
+  onRetry?: () => void
 } = {}) => {
   const [expanded, setExpanded] = useState(false)
   const [, retryStorage] = useReducer((attempt: number) => attempt + 1, 0)
@@ -158,7 +160,7 @@ export const PersonalProgramHomeSection = ({
   }, [programs])
 
   let storedPrograms = programs ?? []
-  let storageUnavailable = false
+  let storageUnavailable = programs === null
   if (programs === undefined) {
     try {
       storedPrograms = readPrograms()
@@ -174,7 +176,7 @@ export const PersonalProgramHomeSection = ({
         <p className={styles.homeSummary} role="alert">
           저장된 일정을 불러오지 못했어요. 브라우저 설정을 확인한 뒤 다시 시도해 주세요.
         </p>
-        <Button color="gray" onClick={retryStorage}>
+        <Button color="gray" onClick={onRetry ?? retryStorage}>
           다시 시도
         </Button>
       </section>

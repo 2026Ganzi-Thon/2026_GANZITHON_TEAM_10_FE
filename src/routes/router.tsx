@@ -1,4 +1,4 @@
-import { createBrowserRouter, redirect } from 'react-router-dom'
+import { createBrowserRouter, matchRoutes, redirect } from 'react-router-dom'
 import { RootLayout } from '@/components'
 import { LoginPage } from '@/pages/LoginPage'
 import { StartPage } from '@/pages/StartPage'
@@ -37,6 +37,13 @@ import { RootEntryError } from '@/pages/RootEntryError'
 import axios from 'axios'
 import { apiClient, getAccessToken, setAccessToken } from '@/lib/api-client'
 import { isOnboardingPreview } from '@/features/onboarding'
+
+const meetingCreatePath = '/meetings/create'
+
+const getMeetingCreatePath = (): string | undefined => {
+  const match = matchRoutes(router.routes, meetingCreatePath)?.at(-1)
+  return match?.route.path === meetingCreatePath ? meetingCreatePath : undefined
+}
 
 export const router = createBrowserRouter([
   {
@@ -101,7 +108,7 @@ export const router = createBrowserRouter([
       { path: '/drawing/conversation', element: <DrawingConversationPage /> },
       { path: '/drawing/result', element: <DrawingResultPage /> },
       { path: '/sessions', element: <SessionsPage /> },
-      { path: '/meetings', element: <MeetingsPage /> },
+      { path: '/meetings', element: <MeetingsPage getCreatePath={getMeetingCreatePath} /> },
       { path: '/meetings/:meetingId', element: <MeetingDetailPage /> },
       { path: '/meetings/:meetingId/waiting', element: <MeetingWaitingPage /> },
       { path: '/meetings/:meetingId/chat', element: <MeetingChatPage /> },
