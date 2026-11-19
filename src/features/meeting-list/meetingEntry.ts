@@ -31,8 +31,9 @@ type MeetingEntry =
 
 export const getMeetingPath = ({ id, kind, status }: Meeting) => {
   const path = `/meetings/${encodeURIComponent(id)}`
-  if (status === 'in-progress') return `${path}/chat`
-  return kind === 'live' ? `${path}/waiting` : path
+  const preview = import.meta.env.DEV && id.startsWith('preview-') ? '?preview' : ''
+  if (status === 'in-progress') return `${path}/chat${preview}`
+  return `${kind === 'live' ? `${path}/waiting` : path}${preview}`
 }
 
 export const getMeetingEntry = (meeting: Meeting): MeetingEntry => {

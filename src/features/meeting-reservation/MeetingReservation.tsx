@@ -81,7 +81,12 @@ export const MeetingReservation = ({
   const { key, search, state } = useLocation()
   const navigationType = useNavigationType()
   const scenario = import.meta.env.DEV ? new URLSearchParams(search).get('mock') : null
-  const waitingSearch = scenario === 'entry-error' ? '?mock=entry-error' : ''
+  const waitingSearch =
+    scenario === 'entry-error'
+      ? '?mock=entry-error'
+      : import.meta.env.DEV && new URLSearchParams(search).has('preview')
+        ? '?preview'
+        : ''
   const listPath = getMeetingListPath(state?.meetingListSearch)
   const [meeting, setMeeting] = useState<ScheduledMeeting | null>(null)
   const [loadError, setLoadError] = useState(false)

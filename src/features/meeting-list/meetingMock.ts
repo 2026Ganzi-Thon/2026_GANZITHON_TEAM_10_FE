@@ -291,6 +291,9 @@ export const getMockMeetingFixture = (
 ) => {
   const meeting =
     meetings.find(({ id }) => id === meetingId) ??
+    (meetingId?.startsWith('preview-')
+      ? getPreviewCreatedMeetings().find(({ id }) => id === meetingId)
+      : undefined) ??
     (import.meta.env.DEV
       ? [...meetingStates, ...extraMeetings].find(({ id }) => id === meetingId)
       : undefined)
@@ -347,5 +350,18 @@ export const loadMeetings = async ({
     pastMeetings: expiringPast
       ? [{ ...pastMeetings[0], startAt: endAt - 60 * 60 * 1000, endAt }]
       : pastMeetings,
+  }
+}
+
+/** 개발용 미리보기에서 생성한 모임을 현재 세션 동안 표시한다. */
+export const getPreviewCreatedMeetings = (): Meeting[] => {
+  if (!import.meta.env.DEV || !new URLSearchParams(window.location.search).has('preview')) return []
+  try {
+    const value: unknown = JSON.parse(
+      sessionStorage.getItem('moyang.preview.createdMeetings') || '[]',
+    )
+    return Array.isArray(value) ? (value as Meeting[]) : []
+  } catch {
+    return []
   }
 }
