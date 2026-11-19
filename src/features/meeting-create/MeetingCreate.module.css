@@ -1,0 +1,80 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 20px 30px 36px;
+}
+.intro {
+  padding: 0 18px;
+}
+.intro h2,
+.intro p,
+.field p,
+.hint {
+  margin: 0;
+}
+.intro p,
+.field p,
+.hint {
+  color: var(--color-gray);
+}
+.form fieldset {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+.form legend {
+  padding: 0;
+  margin: 0 0 10px 6px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.field label {
+  margin-left: 6px;
+}
+.row,
+.chips {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.row button,
+.chips button {
+  border: 0;
+  background: var(--color-surface-gray);
+  color: var(--color-gray);
+  font: inherit;
+  font-size: var(--font-size-body);
+  cursor: pointer;
+  min-height: 44px;
+}
+.row button {
+  flex: 1;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.chips {
+  gap: 8px;
+}
+.chips button {
+  border-radius: 100px;
+  padding: 8px 14px;
+}
+.row .selected,
+.chips .selected {
+  color: var(--color-primary);
+  background: var(--color-surface-green);
+  font-weight: 600;
+}
+.error {
+  color: #c33;
+  margin: 0;
+  font-size: var(--font-size-body);
+}
+.form > button {
+  width: 100%;
+}

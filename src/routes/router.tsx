@@ -21,6 +21,7 @@ import { DrawingDetailsPage } from '@/pages/DrawingDetailsPage'
 import { DrawingConversationPage } from '@/pages/DrawingConversationPage'
 import { DrawingResultPage } from '@/pages/DrawingResultPage'
 import { SessionsPage } from '@/pages/SessionsPage'
+import { MeetingCreatePage } from '@/pages/MeetingCreatePage'
 import { MeetingsPage } from '@/pages/MeetingsPage'
 import { MeetingDetailPage } from '@/pages/MeetingDetailPage'
 import { MeetingWaitingPage } from '@/pages/MeetingWaitingPage'
@@ -109,6 +110,7 @@ export const router = createBrowserRouter([
       { path: '/drawing/result', element: <DrawingResultPage /> },
       { path: '/sessions', element: <SessionsPage /> },
       { path: '/meetings', element: <MeetingsPage getCreatePath={getMeetingCreatePath} /> },
+      { path: '/meetings/create', element: <MeetingCreatePage /> },
       { path: '/meetings/:meetingId', element: <MeetingDetailPage /> },
       { path: '/meetings/:meetingId/waiting', element: <MeetingWaitingPage /> },
       { path: '/meetings/:meetingId/chat', element: <MeetingChatPage /> },

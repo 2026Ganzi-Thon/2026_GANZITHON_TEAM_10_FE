@@ -25,6 +25,7 @@ import reenterIcon from '@/assets/meetings/reenter.svg'
 import scheduledTimeIcon from '@/assets/meetings/scheduled-time.svg'
 import {
   isMeetingStorageEvent,
+  getPreviewCreatedMeetings,
   loadMeetings,
   meetingConcerns,
   pastConversationDuration,
@@ -501,7 +502,12 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
       (data) => {
         if (active) {
           setNow(Date.now())
-          setList(data)
+          const created = getPreviewCreatedMeetings()
+          setList({
+            ...data,
+            meetings: [...created, ...data.meetings],
+            myMeetings: [...created, ...data.myMeetings],
+          })
         }
       },
       () => {
@@ -830,9 +836,12 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
             disabled={!createPath}
             onClick={() => {
               if (!createPath) return
-              navigate(createPath, {
-                state: { fromMeetingList: true, meetingListSearch: search, meetingListKey: key },
-              })
+              navigate(
+                `${createPath}${import.meta.env.DEV && searchParams.has('preview') ? '?preview' : ''}`,
+                {
+                  state: { fromMeetingList: true, meetingListSearch: search, meetingListKey: key },
+                },
+              )
             }}
           >
             <img src={plusIcon} alt="" />
