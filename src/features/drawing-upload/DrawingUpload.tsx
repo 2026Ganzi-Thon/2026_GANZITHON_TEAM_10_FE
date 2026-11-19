@@ -7,7 +7,15 @@ import { Button, PageHeader } from '@/components'
 import styles from './DrawingUpload.module.css'
 
 /** 촬영 또는 앨범에서 선택한 그림을 확인한다. */
-export const DrawingUpload = () => {
+export const DrawingUpload = ({
+  flow,
+}: {
+  flow?: {
+    onBack: () => void
+    onCamera: () => void
+    onSelect: (photo: File) => void
+  }
+} = {}) => {
   const navigate = useNavigate()
   const { state, search } = useLocation()
   const albumRef = useRef<HTMLInputElement>(null)
@@ -23,6 +31,10 @@ export const DrawingUpload = () => {
     }
     if (selected.size > 10 * 1024 * 1024) {
       setError('이미지는 10MB 이하로 선택해 주세요.')
+      return
+    }
+    if (flow) {
+      flow.onSelect(selected)
       return
     }
     navigate(`/drawing/details${search}`, {
@@ -43,10 +55,12 @@ export const DrawingUpload = () => {
         title=""
         action="back"
         onNavigate={() =>
-          navigate(
-            `/drawing/onboarding/3?type=paper${search.includes('preview') ? '&preview' : ''}`,
-            { state },
-          )
+          flow
+            ? flow.onBack()
+            : navigate(
+                `/drawing/onboarding/3?type=paper${search.includes('preview') ? '&preview' : ''}`,
+                { state },
+              )
         }
       />
       <div className={styles.content}>
@@ -84,7 +98,9 @@ export const DrawingUpload = () => {
           onChange={selectFile}
           hidden
         />
-        <Button onClick={() => navigate(`/drawing/camera${search}`, { state })}>
+        <Button
+          onClick={() => (flow ? flow.onCamera() : navigate(`/drawing/camera${search}`, { state }))}
+        >
           사진 촬영하기
         </Button>
         <Button color="gray" onClick={() => albumRef.current?.click()}>
