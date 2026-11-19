@@ -291,6 +291,9 @@ export const getMockMeetingFixture = (
 ) => {
   const meeting =
     meetings.find(({ id }) => id === meetingId) ??
+    (meetingId?.startsWith('preview-')
+      ? getPreviewCreatedMeetings().find(({ id }) => id === meetingId)
+      : undefined) ??
     (import.meta.env.DEV
       ? [...meetingStates, ...extraMeetings].find(({ id }) => id === meetingId)
       : undefined)

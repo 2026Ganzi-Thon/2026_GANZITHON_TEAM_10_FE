@@ -49,6 +49,7 @@ function environment(values = new Map(), initial = start) {
   const navigator = { locks }
   const window = {
     navigator,
+    location: { search: '' },
     setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 5)),
     clearTimeout,
   }
@@ -64,6 +65,7 @@ function environment(values = new Map(), initial = start) {
       removeItem: (key) => session.delete(key),
     },
     Date: Clock,
+    URLSearchParams,
     Intl,
     Map,
     Set,
@@ -108,6 +110,7 @@ function environment(values = new Map(), initial = start) {
   const reservation = load('src/features/meeting-reservation/reservationMock.ts')
   return {
     values,
+    window,
     reflections,
     meetings,
     reservation,
@@ -828,4 +831,32 @@ test('booking and refund preserve personal-program schedules across a reload', a
     JSON.stringify(reloaded.load('src/features/personal-program/programMock.ts').readPrograms()),
     before,
   )
+})
+
+test('created preview meetings resolve for waiting rooms and reservation details only in preview', () => {
+  const env = environment()
+  const base = {
+    title: '테스트',
+    description: '소개',
+    concern: 'LOVE',
+    participants: 1,
+    capacity: 4,
+    status: 'waiting',
+    membership: 'host',
+  }
+  const live = { ...base, id: 'preview-live', kind: 'live' }
+  const scheduled = {
+    ...base,
+    id: 'preview-scheduled',
+    kind: 'scheduled',
+    startAt: start + 3600000,
+  }
+  env.session.set('moyang.preview.createdMeetings', JSON.stringify([live, scheduled]))
+  assert.equal(env.meetings.getMockMeetingFixture(live.id), undefined)
+  env.window.location.search = '?preview'
+  assert.equal(env.meetings.getMockMeetingFixture(live.id).title, live.title)
+  assert.equal(env.meetings.getMockMeetingFixture(scheduled.id).membership, 'host')
+  const { getMeetingPath } = env.load('src/features/meeting-list/meetingEntry.ts')
+  assert.equal(getMeetingPath(live), '/meetings/preview-live/waiting?preview')
+  assert.equal(getMeetingPath(scheduled), '/meetings/preview-scheduled?preview')
 })
