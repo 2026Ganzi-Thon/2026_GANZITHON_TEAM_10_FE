@@ -2,6 +2,7 @@ export type ConversationDrawing = {
   drawingId: number
   title: string
   imageUrl?: string
+  previewPhoto?: { bytes: ArrayBuffer; type: string }
   note?: string | null
   concern?: { id: string; label: string }
 }

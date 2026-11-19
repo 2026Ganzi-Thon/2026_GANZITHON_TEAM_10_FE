@@ -79,6 +79,15 @@ export const PersonalProgramPage = () => {
   const editButton = useRef<HTMLButtonElement>(null)
   const wasEditing = useRef(false)
 
+  useEffect(() => {
+    window.addEventListener('storage', retryStorage)
+    window.addEventListener('pageshow', retryStorage)
+    return () => {
+      window.removeEventListener('storage', retryStorage)
+      window.removeEventListener('pageshow', retryStorage)
+    }
+  }, [])
+
   useEffect(() => () => cancelRequest.current?.abort(), [])
 
   useEffect(() => {
@@ -337,7 +346,7 @@ export const PersonalProgramPage = () => {
           firstReflection={program?.firstReflection ?? reflection}
         />
 
-        {(!program || editing) && (
+        {(!program || (editing && !program.cancelled && !isComplete)) && (
           <ProgramScheduleForm
             initialDays={program?.days ?? []}
             today={today}

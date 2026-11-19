@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Input, PageHeader } from '@/components'
+import { useMockStorageScope } from '@/hooks/useMockStorageScope'
 import { apiClient } from '@/lib/api-client'
 import { getMockPreviewRecordId } from '@/lib/mock-reflections'
+import { getMockStorageScope } from '@/lib/mock-storage'
 import previewImage from '@/assets/drawing/drawing-2.png'
 import styles from './DrawingDetails.module.css'
 
 const isValidId = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 
-type UploadedDrawing = { drawingId?: number; activityId?: number; title: string; note: string }
+type UploadedDrawing = {
+  drawingId?: number
+  recordId?: number
+  activityId?: number
+  title: string
+  note: string
+}
 
 type DetailsFlow = {
   photo: Blob
@@ -28,6 +36,8 @@ const pendingUploads = new Map<string, Promise<UploadedDrawing>>()
 export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
   const navigate = useNavigate()
   const location = useLocation()
+  const storageScope = useMockStorageScope()
+  const [draftScope] = useState(storageScope)
   const data = location.state as {
     photo?: Blob
     previewPhoto?: { bytes: ArrayBuffer; type: string }
@@ -36,6 +46,7 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
     uploaded?: UploadedDrawing
     draft?: { title: string; note: string }
     draftId?: string
+    storageScope?: string
   } | null
   const pickedPhoto = flow?.photo ?? data?.photo
   const previewPhoto = data?.previewPhoto
@@ -47,6 +58,7 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
   const uploaded = flow
     ? undefined
     : (data?.uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined))
+  const uploadedRecordId = uploaded?.recordId ?? uploaded?.activityId
   const isPreview =
     !flow && import.meta.env.DEV && new URLSearchParams(location.search).has('preview')
   const imageRef = useRef<HTMLImageElement>(null)
@@ -58,7 +70,7 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
   )
   const [error, setError] = useState('')
   const invalidUpload =
-    !!uploaded && (!isValidId(uploaded.drawingId) || !isValidId(uploaded.activityId))
+    !!uploaded && (!isValidId(uploaded.drawingId) || !isValidId(uploadedRecordId))
   const [notice, setNotice] = useState(
     invalidUpload
       ? '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.'
@@ -82,6 +94,14 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
     return () => URL.revokeObjectURL(url)
   }, [photo])
 
+  if (
+    !storageScope ||
+    storageScope !== draftScope ||
+    (!flow && data?.storageScope && data.storageScope !== storageScope)
+  ) {
+    return <Navigate to="/drawing" replace />
+  }
+
   if (!(photo instanceof Blob) && !isPreview) {
     return flow ? (
       <p role="alert">선택한 그림을 확인해 주세요.</p>
@@ -92,7 +112,7 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (submitting.current) return
+    if (submitting.current || storageScope !== getMockStorageScope()) return
     if (flow) {
       if (!title.trim()) {
         setError('그림 제목을 입력해 주세요.')
@@ -118,10 +138,8 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
     }
     const currentUpload =
       uploaded ?? (data?.draftId ? completedUploads.get(data.draftId) : undefined)
-    if (
-      currentUpload &&
-      (!isValidId(currentUpload.drawingId) || !isValidId(currentUpload.activityId))
-    ) {
+    const currentRecordId = currentUpload?.recordId ?? currentUpload?.activityId
+    if (currentUpload && (!isValidId(currentUpload.drawingId) || !isValidId(currentRecordId))) {
       setNotice(
         '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.',
       )
@@ -145,22 +163,22 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
     try {
       const draft = { title: title.trim(), note: currentUpload?.note ?? thought.trim() }
       const draftId = data?.draftId ?? crypto.randomUUID()
-      const detailsState = { ...data, draft, draftId, uploaded: currentUpload }
-      if (isPreview && pickedPhoto instanceof Blob) {
+      const detailsState = { ...data, draft, draftId, uploaded: currentUpload, storageScope }
+      if (pickedPhoto instanceof Blob) {
         detailsState.previewPhoto = {
           bytes: await pickedPhoto.arrayBuffer(),
           type: pickedPhoto.type,
         }
         detailsState.photo = undefined
       }
-      if (!active.current) return
+      if (!active.current || storageScope !== getMockStorageScope()) return
       await navigate(`${location.pathname}${location.search}`, {
         replace: true,
         state: detailsState,
       })
-      if (!active.current) return
+      if (!active.current || storageScope !== getMockStorageScope()) return
       let drawingId = currentUpload?.drawingId ?? 0
-      let activityId: number | undefined = currentUpload?.activityId
+      let recordId = currentRecordId
       if (!isPreview && !currentUpload && data?.topic && data.inputType && photo instanceof Blob) {
         const body = new FormData()
         body.append('image', photo, photo instanceof File ? photo.name : 'drawing.jpg')
@@ -170,7 +188,7 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
         let upload = pendingUploads.get(draftId)
         if (!upload) {
           upload = apiClient
-            .post<{ success: boolean; data: { drawingId: number; activityId: number } }>(
+            .post<{ success: boolean; data: { drawingId: number; recordId: number } }>(
               '/api/drawings',
               body,
             )
@@ -179,7 +197,7 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
               const result = response.data.data
               const saved = {
                 drawingId: isValidId(result?.drawingId) ? result.drawingId : undefined,
-                activityId: isValidId(result?.activityId) ? result.activityId : undefined,
+                recordId: isValidId(result?.recordId) ? result.recordId : undefined,
                 ...draft,
               }
               completedUploads.set(draftId, saved)
@@ -191,43 +209,40 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
         const saved = await upload
         draft.note = saved.note
         const validDrawingId = saved.drawingId
-        const validActivityId = saved.activityId
-        if (!active.current) return
+        const validRecordId = saved.recordId
+        if (!active.current || storageScope !== getMockStorageScope()) return
         await navigate(`${location.pathname}${location.search}`, {
           replace: true,
           state: {
-            ...data,
-            draft,
-            draftId,
+            ...detailsState,
             uploaded: saved,
           },
         })
-        if (!validDrawingId || !validActivityId) {
+        if (!validDrawingId || !validRecordId) {
           setNotice(
             '그림은 업로드되었지만 저장 정보를 확인하지 못했어요. 다시 업로드하지 말고 관리자에게 문의해 주세요.',
           )
           return
         }
         drawingId = validDrawingId
-        activityId = validActivityId
+        recordId = validRecordId
       }
-      if (!active.current) return
+      if (!active.current || storageScope !== getMockStorageScope()) return
       navigate(`/drawing/conversation${isPreview ? '?preview' : ''}`, {
         state: {
-          ...data,
-          ...(isPreview &&
-            photo instanceof Blob && {
-              photo: undefined,
-              previewPhoto: undefined,
-              recordId: getMockPreviewRecordId(draftId),
-            }),
+          ...detailsState,
+          ...(photo instanceof Blob && {
+            photo: undefined,
+            previewPhoto: undefined,
+          }),
           drawing: {
             drawingId,
             title: title.trim(),
             note: draft.note,
-            imageUrl: photo instanceof Blob ? URL.createObjectURL(photo) : previewImage,
+            imageUrl: photo instanceof Blob ? undefined : previewImage,
+            previewPhoto: photo instanceof Blob ? detailsState.previewPhoto : undefined,
           },
-          activityId,
+          recordId: isPreview && photo instanceof Blob ? getMockPreviewRecordId(draftId) : recordId,
         },
       })
     } catch {
@@ -244,14 +259,15 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
       <PageHeader
         title=""
         action="back"
-        onNavigate={() =>
-          flow
-            ? flow.onBack()
-            : navigate(
-                `${data?.inputType === 'CANVAS' ? '/drawing/canvas' : '/drawing/upload'}${location.search}`,
-                { state: data },
-              )
-        }
+        onNavigate={() => {
+          active.current = false
+          if (flow) flow.onBack()
+          else
+            navigate(
+              `${data?.inputType === 'CANVAS' ? '/drawing/canvas' : '/drawing/upload'}${location.search}`,
+              { state: data },
+            )
+        }}
       />
       <form className={styles.form} onSubmit={submit} noValidate>
         <img

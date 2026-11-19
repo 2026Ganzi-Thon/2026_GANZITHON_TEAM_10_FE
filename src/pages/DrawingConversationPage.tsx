@@ -14,6 +14,7 @@ export const DrawingConversationPage = () => {
   const state = location.state as {
     drawing?: ConversationDrawing
     recordId?: RecordId
+    activityId?: number
     programActivity?: ProgramActivityHandoff
     storageScope?: string
   } | null
@@ -28,7 +29,8 @@ export const DrawingConversationPage = () => {
 
   const activity = state?.programActivity
   const fallbackRecordId = getMockRecordId(drawing.drawingId)
-  const recordId = isRecordId(state?.recordId) ? state.recordId : fallbackRecordId
+  const handoffRecordId = state?.recordId ?? state?.activityId
+  const recordId = isRecordId(handoffRecordId) ? handoffRecordId : fallbackRecordId
   const drawingKey = `${storageScope}:mock-conversation:${drawing.drawingId}:${scenario ?? 'default'}`
   const activityKey = activity
     ? `${drawingKey}:${activity.mock ?? 'program'}:${activity.programId}:${activity.round}:${activity.date}`
@@ -44,6 +46,9 @@ export const DrawingConversationPage = () => {
       drawing={drawing}
       recordId={recordId}
       storageKey={storageKey}
+      legacyStorageKey={
+        drawing.drawingId > 0 && storageKey !== activityKey ? activityKey : undefined
+      }
       storageScope={storageScope}
       programActivity={activity}
       isPreview={!state?.drawing}

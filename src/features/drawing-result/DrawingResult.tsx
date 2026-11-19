@@ -10,6 +10,7 @@ import nextArrow from '@/assets/drawing-result/next-arrow.svg'
 import woolReward from '@/assets/drawing-result/wool-reward.png'
 import { Button, Modal } from '@/components'
 import { ConversationMessages } from '@/features/drawing-conversation/ConversationMessages'
+import { DrawingImage } from '@/features/drawing-conversation/DrawingImage'
 import { discardConversation } from '@/features/drawing-conversation/conversationMock'
 import chatStyles from '@/features/drawing-conversation/DrawingConversation.module.css'
 import { useModal } from '@/hooks/useModal'
@@ -330,6 +331,7 @@ export const DrawingResult = ({
     { label: '대화에서 떠올린 생각', icon: detailThoughts, text: result?.card.thoughts?.trim() },
   ].filter(({ text }) => text)
   const imageUrl = imageFailed ? undefined : result?.drawing.imageUrl
+  const hasImage = Boolean(imageUrl || (!imageFailed && result?.drawing.previewPhoto))
   const isReadingConversation = showConversation && result !== null
   const canSaveOnLeave = !recordSaved && result !== null
   const failedLeavingForDrawing = failedSave?.destination === '/drawing'
@@ -392,9 +394,10 @@ export const DrawingResult = ({
             <>
               <figure className={styles.drawing}>
                 <div className={styles.imageFrame}>
-                  {imageUrl ? (
-                    <img
+                  {hasImage ? (
+                    <DrawingImage
                       src={imageUrl}
+                      previewPhoto={result.drawing.previewPhoto}
                       alt={result.drawing.title}
                       onError={() => setImageFailed(true)}
                     />
@@ -641,8 +644,13 @@ export const DrawingResult = ({
           </header>
           <div className={chatStyles.drawingHeading}>
             <div className={chatStyles.drawingCard}>
-              {imageUrl ? (
-                <img className={chatStyles.drawingImage} src={imageUrl} alt="" />
+              {hasImage ? (
+                <DrawingImage
+                  className={chatStyles.drawingImage}
+                  src={imageUrl}
+                  previewPhoto={result?.drawing.previewPhoto}
+                  alt=""
+                />
               ) : (
                 <span className={chatStyles.drawingPlaceholder} aria-hidden="true">
                   그림
