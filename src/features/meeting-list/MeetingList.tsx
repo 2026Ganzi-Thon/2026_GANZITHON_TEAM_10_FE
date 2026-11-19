@@ -8,6 +8,10 @@ import {
   useSearchParams,
 } from 'react-router-dom'
 import { Button, Modal } from '@/components'
+import { scheduledStartGrace } from '@/features/meeting-reservation/reservationMock'
+import { applyWaitingRoomStatuses } from '@/features/meeting-waiting-room/waitingRoomMock'
+import { applyMeetingChatHistory } from '@/features/meeting-chat/chatHistory'
+import { isMeetingChatStorageEvent } from '@/features/meeting-chat/chatMock'
 import arrowIcon from '@/assets/meetings/arrow.svg'
 import attendeesIcon from '@/assets/meetings/attendees.svg'
 import attendeesSmallIcon from '@/assets/meetings/attendees-small.svg'
@@ -19,7 +23,12 @@ import pastChevron from '@/assets/meetings/past-chevron.svg'
 import plusIcon from '@/assets/meetings/plus.svg'
 import reenterIcon from '@/assets/meetings/reenter.svg'
 import scheduledTimeIcon from '@/assets/meetings/scheduled-time.svg'
-import { loadMeetings, meetingConcerns, pastConversationDuration } from './meetingMock'
+import {
+  isMeetingStorageEvent,
+  loadMeetings,
+  meetingConcerns,
+  pastConversationDuration,
+} from './meetingMock'
 import { getMeetingEntry, getMeetingPath, meetingNotices } from './meetingEntry'
 import type { MeetingNotice } from './meetingEntry'
 import type {
@@ -37,10 +46,15 @@ const tabs = [
   { id: 'find', label: '모임 찾기' },
 ] as const
 
+const loadMeetingList = (options: Parameters<typeof loadMeetings>[0]) =>
+  loadMeetings(options)
+    .then(applyWaitingRoomStatuses)
+    .then((data) => (options.empty ? data : applyMeetingChatHistory(data)))
+
 const returnPositionKey = 'moyang:meeting-list-return'
 const visibleMeetingCount = 3
 
-type SectionName = 'live' | 'scheduled' | 'past' | 'guide'
+type SectionName = 'live' | 'scheduled' | 'owned' | 'reserved' | 'joinedLive' | 'past' | 'guide'
 type ExpandedSections = Partial<Record<SectionName, boolean>>
 type ShowNotice = (notice: MeetingNotice) => void
 
@@ -48,6 +62,7 @@ type ReturnPosition = {
   key: string
   search: string
   meetingId?: string
+  meetingAction?: string
   scrollTop: number
   pastExpanded?: boolean
   expandedSections?: ExpandedSections
@@ -93,18 +108,21 @@ const pastDateFormat = new Intl.DateTimeFormat('ko-KR', {
 const getConcernLabel = (concern: MeetingConcern) =>
   meetingConcerns.find(({ id }) => id === concern)?.label
 
-const ReentryLink = ({ meeting, label }: { meeting: Meeting; label: string }) => (
-  <Link
-    to={getMeetingPath(meeting)}
-    state={{ fromMeetingList: true }}
-    aria-label={`${meeting.title} ${label}`}
-    data-meeting-id={meeting.id}
-    className={styles.reentry}
-  >
-    <img src={reenterIcon} alt="" />
-    {label}
-  </Link>
-)
+const ReentryLink = ({ meeting, label }: { meeting: Meeting; label: string }) => {
+  const { key, search } = useLocation()
+  return (
+    <Link
+      to={getMeetingPath(meeting)}
+      state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
+      aria-label={`${meeting.title} ${label}`}
+      data-meeting-id={meeting.id}
+      className={styles.reentry}
+    >
+      <img src={reenterIcon} alt="" />
+      {label}
+    </Link>
+  )
+}
 
 const ScheduledMeetingCard = ({
   meeting,
@@ -113,6 +131,7 @@ const ScheduledMeetingCard = ({
   meeting: ScheduledMeeting
   onNotice: ShowNotice
 }) => {
+  const { key, search } = useLocation()
   const entry = getMeetingEntry(meeting)
   const canReenter = meeting.status === 'in-progress' && entry.canEnter
 
@@ -151,7 +170,7 @@ const ScheduledMeetingCard = ({
       {entry.canEnter && !canReenter && (
         <Link
           to={getMeetingPath(meeting)}
-          state={{ fromMeetingList: true }}
+          state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
           aria-label={`${meeting.title} 상세 보기`}
           data-meeting-id={meeting.id}
           className={styles.scheduledAction}
@@ -171,6 +190,7 @@ const ScheduledMeetingCard = ({
 }
 
 const LiveMeetingCard = ({ meeting, onNotice }: { meeting: LiveMeeting; onNotice: ShowNotice }) => {
+  const { key, search } = useLocation()
   const entry = getMeetingEntry(meeting)
   const canReenter = meeting.status === 'in-progress' && entry.canEnter
 
@@ -189,7 +209,7 @@ const LiveMeetingCard = ({ meeting, onNotice }: { meeting: LiveMeeting; onNotice
         {entry.canEnter === true && !canReenter && (
           <Link
             to={getMeetingPath(meeting)}
-            state={{ fromMeetingList: true }}
+            state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
             aria-label={`${meeting.title} ${entry.label}`}
             data-meeting-id={meeting.id}
             className={styles.enter}
@@ -248,7 +268,6 @@ type MeetingSectionProps = {
   description?: string
   meetings: Meeting[]
   concern?: MeetingConcern
-  role?: '방장' | '참여자'
   emptyMessage?: string
   expanded?: boolean
   onToggle?: () => void
@@ -260,7 +279,6 @@ const MeetingSection = ({
   description,
   meetings,
   concern,
-  role,
   emptyMessage,
   expanded = false,
   onToggle,
@@ -275,7 +293,6 @@ const MeetingSection = ({
     <section className={styles.section}>
       <div className={styles.sectionHeading}>
         <h2 className={description ? styles.withDescription : undefined}>{title}</h2>
-        {role && <span className={styles.role}>{role}</span>}
         {canToggle && (
           <SectionToggle
             title={title}
@@ -322,6 +339,15 @@ const PastMeetingsSection = ({
   onToggle: () => void
 }) => {
   const [now, setNow] = useState(Date.now)
+  const { key, search } = useLocation()
+  const navigate = useNavigate()
+  const openHistory = (meeting: PastMeeting, drawing: boolean) =>
+    navigate(
+      `/meetings/${encodeURIComponent(meeting.id)}/history${drawing ? '?view=drawing' : ''}`,
+      {
+        state: { fromMeetingList: true, meetingListSearch: search, meetingListKey: key },
+      },
+    )
 
   useEffect(() => {
     const nextExpiry = meetings
@@ -373,11 +399,23 @@ const PastMeetingsSection = ({
                   {getConcernLabel(meeting.concern)}
                 </p>
                 <div className={styles.pastActions}>
-                  <button type="button" disabled>
+                  <button
+                    type="button"
+                    data-meeting-id={meeting.id}
+                    data-meeting-action="drawing"
+                    disabled={!meeting.hasChatHistory || !meeting.hasDrawing}
+                    onClick={() => openHistory(meeting, true)}
+                  >
                     <span>내가 그린 그림 확인하기</span>
                   </button>
                   {now < meeting.endAt + pastConversationDuration && (
-                    <button type="button" disabled>
+                    <button
+                      type="button"
+                      data-meeting-id={meeting.id}
+                      data-meeting-action="history"
+                      disabled={!meeting.hasChatHistory}
+                      onClick={() => openHistory(meeting, false)}
+                    >
                       <span>지난 대화 보기</span>
                     </button>
                   )}
@@ -395,11 +433,15 @@ const PastMeetingsSection = ({
   )
 }
 
-export const MeetingList = () => {
+export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | undefined }) => {
   const pageRef = useRef<HTMLDivElement>(null)
   const filtersRef = useRef<HTMLDivElement>(null)
   const returnMeetingRef = useRef<string | undefined>(undefined)
+  const returnActionRef = useRef<string | undefined>(undefined)
+  const noticePositionRef = useRef<ReturnPosition | undefined>(undefined)
   const { key, search, state } = useLocation()
+  const createPath = getCreatePath()
+  const originKey = typeof state?.meetingListKey === 'string' ? state.meetingListKey : undefined
   const navigate = useNavigate()
   const navigationType = useNavigationType()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -408,15 +450,21 @@ export const MeetingList = () => {
   const scenario = import.meta.env.DEV ? searchParams.get('mock') : null
   const [attempt, setAttempt] = useState(0)
   const [list, setList] = useState<MeetingListData | 'error' | null>(null)
-  const availableMeetings =
-    list && list !== 'error' ? list.meetings.filter(({ status }) => status !== 'cancelled') : []
-  const discoverableMeetings = availableMeetings.filter(({ status }) => status === 'waiting')
-  const joinedLiveMeetings = availableMeetings.filter(
+  const [now, setNow] = useState(Date.now)
+  const meetings = list && list !== 'error' ? list.meetings : []
+  const myMeetings = list && list !== 'error' ? list.myMeetings : []
+  const discoverableMeetings = meetings.filter(
+    (meeting) => meeting.status === 'waiting' && (meeting.kind === 'live' || meeting.startAt > now),
+  )
+  const joinedLiveMeetings = myMeetings.filter(
     ({ kind, membership, hasEntered }) =>
       kind === 'live' && membership === 'participant' && hasEntered,
   )
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>(() => {
-    const position = navigationType === 'POP' ? readReturnPosition(key, search) : undefined
+    const position =
+      navigationType === 'POP' || originKey
+        ? readReturnPosition(originKey ?? key, search)
+        : undefined
     return { past: position?.pastExpanded, ...position?.expandedSections }
   })
   const [activeNotice, setActiveNotice] = useState<MeetingNotice | null>(null)
@@ -428,6 +476,9 @@ export const MeetingList = () => {
       : undefined
 
   const closeNotice = () => {
+    if (routeNotice && originKey) {
+      noticePositionRef.current = readReturnPosition(originKey, search)
+    }
     setActiveNotice(null)
     if (routeNotice) navigate({ search }, { replace: true, state: null })
   }
@@ -439,7 +490,7 @@ export const MeetingList = () => {
   useEffect(() => {
     let active = true
 
-    loadMeetings({
+    loadMeetingList({
       empty: scenario === 'empty',
       fail: scenario === 'error',
       states: scenario === 'meeting-states',
@@ -448,7 +499,10 @@ export const MeetingList = () => {
       delay: scenario === 'loading' ? 5000 : undefined,
     }).then(
       (data) => {
-        if (active) setList(data)
+        if (active) {
+          setNow(Date.now())
+          setList(data)
+        }
       },
       () => {
         if (active) setList('error')
@@ -460,29 +514,73 @@ export const MeetingList = () => {
     }
   }, [scenario, attempt])
 
+  useEffect(() => {
+    const refresh = (event: StorageEvent) => {
+      if (isMeetingStorageEvent(event) || isMeetingChatStorageEvent(event.key))
+        setAttempt((value) => value + 1)
+    }
+    window.addEventListener('storage', refresh)
+    return () => window.removeEventListener('storage', refresh)
+  }, [])
+
+  useEffect(() => {
+    if (!list || list === 'error') return
+    const nextStart = [...list.meetings, ...list.myMeetings].reduce((next, meeting) => {
+      if (meeting.kind !== 'scheduled' || meeting.status !== 'waiting') return next
+      if (meeting.startAt > now) return Math.min(next, meeting.startAt)
+      const deadline = meeting.startAt + scheduledStartGrace
+      return meeting.membership && deadline > now ? Math.min(next, deadline) : next
+    }, Infinity)
+    if (!Number.isFinite(nextStart)) return
+    const timer = window.setTimeout(
+      () => {
+        setNow(Date.now())
+        setAttempt((value) => value + 1)
+      },
+      Math.min(Math.max(0, nextStart - Date.now()), 2_147_483_647),
+    )
+    return () => window.clearTimeout(timer)
+  }, [list, now])
+
   useLayoutEffect(() => {
-    if (!list || list === 'error' || navigationType !== 'POP') return
-    const position = readReturnPosition(key, search)
+    if (!list || list === 'error') return
+    if (navigationType !== 'POP' && !originKey && !noticePositionRef.current) return
+    const position = noticePositionRef.current ?? readReturnPosition(originKey ?? key, search)
     if (!position) return
     const scroller = pageRef.current?.parentElement
+    if (scroller) scroller.scrollTop = position.scrollTop
+  }, [key, list, navigationType, search, notice, originKey])
+
+  useEffect(() => {
+    if (notice || !list || list === 'error') return
+    if (navigationType !== 'POP' && !originKey && !noticePositionRef.current) return
+    const position = noticePositionRef.current ?? readReturnPosition(originKey ?? key, search)
+    if (!position) return
     const link = position.meetingId
-      ? pageRef.current?.querySelector<HTMLAnchorElement>(
-          `a[data-meeting-id="${CSS.escape(position.meetingId)}"]`,
+      ? pageRef.current?.querySelector<HTMLElement>(
+          `[data-meeting-id="${CSS.escape(position.meetingId)}"]${position.meetingAction ? `[data-meeting-action="${CSS.escape(position.meetingAction)}"]` : ''}`,
         )
       : undefined
-    if (scroller) scroller.scrollTop = position.scrollTop
-    link?.focus({ preventScroll: true })
-  }, [key, list, navigationType, search])
+    const target =
+      link ??
+      (position.meetingId
+        ? pageRef.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')
+        : undefined)
+    target?.focus({ preventScroll: true })
+    noticePositionRef.current = undefined
+  }, [key, list, navigationType, search, notice, originKey])
 
   useLayoutEffect(() => {
     if (!list || list === 'error') return
     const scroller = pageRef.current?.parentElement
     returnMeetingRef.current = undefined
-    return () => {
+    returnActionRef.current = undefined
+    const savePosition = () => {
       const position: ReturnPosition = {
         key,
         search,
         meetingId: returnMeetingRef.current,
+        meetingAction: returnActionRef.current,
         scrollTop: scroller?.scrollTop ?? 0,
         expandedSections,
       }
@@ -491,6 +589,11 @@ export const MeetingList = () => {
       } catch {
         return
       }
+    }
+    window.addEventListener('pagehide', savePosition)
+    return () => {
+      window.removeEventListener('pagehide', savePosition)
+      savePosition()
     }
   }, [key, search, expandedSections, list])
 
@@ -523,8 +626,9 @@ export const MeetingList = () => {
     ) {
       return
     }
-    returnMeetingRef.current =
-      event.target.closest<HTMLAnchorElement>('a[data-meeting-id]')?.dataset.meetingId
+    const target = event.target.closest<HTMLElement>('[data-meeting-id]')
+    returnMeetingRef.current = target?.dataset.meetingId
+    returnActionRef.current = target?.dataset.meetingAction
   }
 
   const changeConcern = (id?: MeetingConcern) => {
@@ -682,28 +786,31 @@ export const MeetingList = () => {
             <>
               <MeetingSection
                 title="내가 만든 모임"
-                role="방장"
                 emptyMessage="만든 모임이 아직 없어요"
-                meetings={availableMeetings.filter(({ membership }) => membership === 'host')}
+                meetings={myMeetings.filter(({ membership }) => membership === 'host')}
                 concern={concern}
+                expanded={expandedSections.owned === true}
+                onToggle={() => toggleSection('owned')}
                 onNotice={setActiveNotice}
               />
               <MeetingSection
                 title="예약한 모임"
-                role="참여자"
                 emptyMessage="예약한 모임이 아직 없어요"
-                meetings={availableMeetings.filter(
+                meetings={myMeetings.filter(
                   ({ kind, membership }) => kind === 'scheduled' && membership === 'participant',
                 )}
                 concern={concern}
+                expanded={expandedSections.reserved === true}
+                onToggle={() => toggleSection('reserved')}
                 onNotice={setActiveNotice}
               />
               {joinedLiveMeetings.length > 0 && (
                 <MeetingSection
                   title="참여 중인 실시간 모임"
-                  role="참여자"
                   meetings={joinedLiveMeetings}
                   concern={concern}
+                  expanded={expandedSections.joinedLive === true}
+                  onToggle={() => toggleSection('joinedLive')}
                   onNotice={setActiveNotice}
                 />
               )}
@@ -719,7 +826,15 @@ export const MeetingList = () => {
           )}
         </div>
         <div className={styles.create}>
-          <Button disabled>
+          <Button
+            disabled={!createPath}
+            onClick={() => {
+              if (!createPath) return
+              navigate(createPath, {
+                state: { fromMeetingList: true, meetingListSearch: search, meetingListKey: key },
+              })
+            }}
+          >
             <img src={plusIcon} alt="" />
             모임 만들기
           </Button>

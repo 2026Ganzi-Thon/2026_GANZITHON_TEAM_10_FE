@@ -1,3 +1,6 @@
+import { getMockRecordId } from '@/lib/mock-reflections'
+import type { RecordId } from '@/lib/mock-reflections'
+
 export const weekdays = ['일', '월', '화', '수', '목', '금', '토'] as const
 export const weekdayOrder = [1, 2, 3, 4, 5, 6, 0]
 
@@ -22,13 +25,57 @@ export const rounds = [
   },
 ] as const
 
+const concernRounds = {
+  STUDY_CAREER: [
+    {
+      label: '지금의 내 마음 살펴보기',
+      topic: '엉켜버린 마음의 실타래',
+      description: '요즘 나를 답답하게 만드는 감정들을 서로 얽힌 실과 매듭의 모습으로 표현하기',
+    },
+    {
+      label: '나를 힘들게 하는 것들',
+      topic: '내 어깨 위의 짐',
+      description: '학업과 진로에서 느끼는 부담과 스트레스를 크고 작은 짐의 모습으로 표현하기',
+    },
+    {
+      label: '나만의 여유 찾아가기',
+      topic: '마음에 작은 창문 만들기',
+      description: '답답한 일상 속에서 나에게 필요한 휴식과 여유를 창문 너머의 풍경으로 표현하기',
+    },
+  ],
+  DAILY_FUTURE: [
+    {
+      label: '지금의 내 마음 살펴보기',
+      topic: '마음의 배터리',
+      description: '요즘 나의 에너지와 감정 상태를 색과 모양으로 표현하기',
+    },
+    {
+      label: '나를 불안하게 하는 것들',
+      topic: '마음속 걱정 구름',
+      description: '일상과 미래에 대한 걱정을 구름의 형태로 자유롭게 그려보기',
+    },
+    {
+      label: '나에게 힘이 되는 순간',
+      topic: '나만의 작은 쉼터',
+      description: '지친 마음이 편안해지는 순간이나 공간을 그림으로 표현하기',
+    },
+  ],
+}
+
+export const getProgramRounds = (concernId?: string) => {
+  if (concernId !== 'STUDY_CAREER' && concernId !== 'DAILY_FUTURE') return rounds
+  return rounds.map((round, index) => ({ ...round, ...concernRounds[concernId][index] }))
+}
+
 export type ProgramConcern = { id: string; label: string }
 export type FirstReflection = {
-  id: number
   concern: ProgramConcern
   title?: string
   story?: string
-}
+} & ({ recordId: RecordId; id?: never } | { recordId?: never; id: number })
+
+export const getFirstReflectionRecordId = (reflection: FirstReflection) =>
+  reflection.recordId ?? getMockRecordId(reflection.id)
 
 export type PersonalProgram = {
   id: string
@@ -103,12 +150,13 @@ export const getProgramForReflection = (programs: PersonalProgram[], reflection:
   programs.find(
     (program) =>
       program.firstReflection.concern.id === reflection.concern.id &&
-      program.firstReflection.id === reflection.id,
+      getFirstReflectionRecordId(program.firstReflection) ===
+        getFirstReflectionRecordId(reflection),
   )
 
 export const getProgramActivity = (program: PersonalProgram, today: string) => {
   const { date } = getActivitySchedule(program, today)
-  const round = rounds[program.completed]
+  const round = getProgramRounds(program.firstReflection.concern.id)[program.completed]
   if (program.cancelled || date !== today || !round) return null
 
   return {

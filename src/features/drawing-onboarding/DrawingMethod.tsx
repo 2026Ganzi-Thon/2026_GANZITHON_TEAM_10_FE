@@ -24,6 +24,9 @@ export const DrawingMethod = () => {
   } | null>(null)
   const [topicError, setTopicError] = useState(false)
   const [topicAttempt, setTopicAttempt] = useState(0)
+  const canStart = programActivity
+    ? topic?.title === programActivity.topic
+    : isPreview || Boolean(topic)
 
   useEffect(() => {
     if (isPreview && !programActivity) return
@@ -38,7 +41,12 @@ export const DrawingMethod = () => {
       .then(({ data }) => {
         if (!cancelled) {
           const selected = programActivity
-            ? data.data?.topics.find((item) => item.title === programActivity.topic)
+            ? data.data?.topics.find(
+                (item) =>
+                  item.title === programActivity.topic &&
+                  Number.isSafeInteger(item.topicId) &&
+                  item.topicId > 0,
+              )
             : data.data?.topics[0]
           if (data.success && selected) setTopic(selected)
           else setTopicError(true)
@@ -78,18 +86,19 @@ export const DrawingMethod = () => {
                 : (topic?.title ?? '주제를 불러오고 있어요.'))}
           </h1>
           {topicError && (
-            <p role="alert">
-              주제 정보를 불러오지 못했어요.{' '}
-              <button
-                type="button"
+            <div className={styles.topicError}>
+              <p role="alert">선택한 주제를 불러오지 못했어요.</p>
+              <Button
+                color="gray"
                 onClick={() => {
+                  setTopic(null)
                   setTopicError(false)
-                  setTopicAttempt((value) => value + 1)
+                  setTopicAttempt((attempt) => attempt + 1)
                 }}
               >
-                다시 시도
-              </button>
-            </p>
+                주제 다시 불러오기
+              </Button>
+            </div>
           )}
         </section>
         <section className={styles.methods} aria-labelledby="method-heading">
@@ -138,7 +147,7 @@ export const DrawingMethod = () => {
       </div>
       <div className={styles.actions}>
         <Button
-          disabled={!method || (programActivity ? !topic : !isPreview && !topic)}
+          disabled={!method || !canStart}
           onClick={() =>
             navigate(
               `/drawing/onboarding/3?type=${method === 'paper' ? 'paper' : 'canvas'}${isPreview ? '&preview' : ''}`,
