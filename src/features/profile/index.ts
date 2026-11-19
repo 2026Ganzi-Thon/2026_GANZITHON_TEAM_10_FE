@@ -1,2 +1,2 @@
 export { ProfileEdit } from './ProfileEdit'
-export { readPreviewColor } from './preview'
+export { readPreviewColor, readSheepColor } from './preview'

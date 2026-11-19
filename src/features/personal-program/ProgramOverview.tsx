@@ -257,3 +257,59 @@ export const PersonalProgramHomeSection = ({
     </section>
   )
 }
+
+export type ServerShape = {
+  themeCode: string
+  themeName: string
+  completedRounds: number
+  totalRounds: number
+  nextRound: number | null
+  weekdays: string[]
+  nextActivityDate: string | null
+}
+
+/** 서버에 저장된 모양의 일정과 진행 현황을 홈에 표시한다. */
+export const ServerShapeHomeSection = ({ shape }: { shape: ServerShape }) => {
+  const weekdayNames: Record<string, string> = {
+    MON: '월',
+    TUE: '화',
+    WED: '수',
+    THU: '목',
+    FRI: '금',
+    SAT: '토',
+    SUN: '일',
+  }
+  const days = shape.weekdays.map((day) => weekdayNames[day] ?? day).join(' · ')
+
+  return (
+    <section className={styles.homeSection}>
+      <h2>나의 모양 이어가기</h2>
+      <p className={styles.homeSummary}>총 1개의 모양을 이어가고 있어요.</p>
+      <Link className={styles.homeCard} to="/sessions">
+        <div className={styles.homeCardTitle}>
+          <strong>{shape.themeName}</strong>
+          <FontAwesomeIcon icon={faChevronRight} aria-hidden="true" />
+        </div>
+        {days && <p className={styles.homeCardSchedule}>활동 요일 · {days}</p>}
+        {shape.nextActivityDate && (
+          <p className={styles.homeCardSchedule}>
+            <FontAwesomeIcon icon={faCalendarDays} aria-hidden="true" />
+            <time dateTime={shape.nextActivityDate}>
+              {formatActivityDate(shape.nextActivityDate)}
+            </time>
+            {shape.nextRound !== null && <span>· {shape.nextRound}번째 모양</span>}
+          </p>
+        )}
+        <div className={styles.progressCard}>
+          <div className={styles.progressLabel}>
+            <span>진행상황</span>
+            <span>
+              {shape.completedRounds} / {shape.totalRounds} 완료
+            </span>
+          </div>
+          <progress aria-label="진행상황" value={shape.completedRounds} max={shape.totalRounds} />
+        </div>
+      </Link>
+    </section>
+  )
+}

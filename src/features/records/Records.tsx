@@ -51,14 +51,19 @@ export const Records = () => {
     if (preview) return
     const controller = new AbortController()
     apiClient
-      .get<Response<{ month: string; records: RecordItem[] }>>('/api/records/calendar', {
+      .get<
+        Response<{
+          month: string
+          items: { date: string; recordId: number; imageUrl: string | null }[]
+        }>
+      >('/api/records/calendar', {
         params: { month: monthValue },
         signal: controller.signal,
       })
       .then(({ data }) => {
-        if (!data.success || !data.data || !Array.isArray(data.data.records))
+        if (!data.success || !data.data || !Array.isArray(data.data.items))
           throw new Error('Invalid response')
-        setCalendar(data.data.records)
+        setCalendar(data.data.items.map(({ date, ...item }) => ({ ...item, recordDate: date })))
       })
       .catch(() => {
         if (!controller.signal.aborted) setCalendarError(true)

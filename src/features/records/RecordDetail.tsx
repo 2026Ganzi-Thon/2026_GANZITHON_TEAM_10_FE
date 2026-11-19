@@ -156,6 +156,31 @@ export const RecordDetailContent = ({
               </details>
             ))}
           </section>
+          {detail.analysis && (
+            <section className={styles.detailBox}>
+              <h3>그림 분석</h3>
+              {[
+                { label: '주요 요소', text: detail.analysis.mainElements },
+                { label: '공간과 배치', text: detail.analysis.spatialComposition },
+                { label: '선과 표현', text: detail.analysis.lineExpression },
+                { label: '감정과 의미', text: detail.analysis.emotionMeaning },
+              ]
+                .filter(({ text }) => Boolean(text))
+                .map(({ label, text }) => (
+                  <details key={label} className={styles.analysis}>
+                    <summary>
+                      <span>{label}</span>
+                      <FontAwesomeIcon
+                        className={styles.detailChevron}
+                        icon={faChevronDown}
+                        aria-hidden="true"
+                      />
+                    </summary>
+                    <p className={styles.reflection}>{text}</p>
+                  </details>
+                ))}
+            </section>
+          )}
         </>
       )}
     </div>

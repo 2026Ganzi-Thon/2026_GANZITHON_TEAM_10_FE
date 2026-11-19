@@ -7,15 +7,10 @@ import styles from './Login.module.css'
 
 type LoginResponse = {
   success: boolean
-  data: { accessToken: string } | null
+  data: { accessToken: string; user: { onboardingCompleted: boolean } } | null
 }
 
-type UserResponse = {
-  success: boolean
-  data: { onboarding: object | null } | null
-}
-
-/** 로그인 후 내 정보를 조회해 온보딩 정보가 없으면 프로필로, 있으면 홈으로 이동한다. */
+/** 로그인 응답의 온보딩 완료 여부에 따라 다음 화면으로 이동한다. */
 export const Login = () => {
   const navigate = useNavigate()
   const location = useLocation()
@@ -39,7 +34,6 @@ export const Login = () => {
     const controller = new AbortController()
     requestRef.current = controller
     setLoading(true)
-    let token: string
     try {
       const { data } = await apiClient.post<LoginResponse>(
         '/api/auth/login',
@@ -47,8 +41,16 @@ export const Login = () => {
         { signal: controller.signal },
       )
       if (controller.signal.aborted) return
-      if (!data.success || !data.data?.accessToken) throw new Error('Invalid response')
-      token = data.data.accessToken
+      if (
+        !data.success ||
+        !data.data?.accessToken ||
+        typeof data.data.user?.onboardingCompleted !== 'boolean'
+      )
+        throw new Error('Invalid response')
+      setAccessToken(data.data.accessToken)
+      navigate(data.data.user.onboardingCompleted ? '/home' : '/onboarding/profile', {
+        replace: true,
+      })
     } catch (error) {
       if (controller.signal.aborted) return
       setCredentialsInvalid(axios.isAxiosError(error) && error.response?.status === 401)
@@ -57,29 +59,6 @@ export const Login = () => {
           ? '아이디 또는 비밀번호를 확인해 주세요.'
           : '로그인하지 못했어요. 잠시 후 다시 시도해 주세요.',
       )
-      setLoading(false)
-      requestRef.current = null
-      return
-    }
-
-    try {
-      const { data } = await apiClient.get<UserResponse>('/api/users/me', {
-        signal: controller.signal,
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (controller.signal.aborted) return
-      if (
-        !data.success ||
-        !data.data ||
-        (data.data.onboarding !== null &&
-          (typeof data.data.onboarding !== 'object' || Array.isArray(data.data.onboarding)))
-      )
-        throw new Error('Invalid response')
-      setAccessToken(token)
-      navigate(data.data.onboarding === null ? '/onboarding/profile' : '/home', { replace: true })
-    } catch {
-      if (controller.signal.aborted) return
-      setError('내 정보를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.')
     } finally {
       if (!controller.signal.aborted) {
         requestRef.current = null

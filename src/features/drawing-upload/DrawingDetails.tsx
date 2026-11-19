@@ -185,9 +185,6 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
         if (getMockStorageScope(token) !== storageScope) return
         const body = new FormData()
         body.append('image', photo, photo instanceof File ? photo.name : 'drawing.jpg')
-        body.append('inputType', data.inputType)
-        body.append('topicId', String(data.topic.topicId))
-        if (thought.trim()) body.append('note', thought.trim())
         const key = getUploadKey(storageScope, draftId)
         let upload = pendingUploads.get(key)
         if (!upload) {
@@ -195,7 +192,14 @@ export const DrawingDetails = ({ flow }: { flow?: DetailsFlow } = {}) => {
             .post<{ success: boolean; data: { drawingId: number; recordId: number } }>(
               '/api/drawings',
               body,
-              { headers: { Authorization: token ? `Bearer ${token}` : false } },
+              {
+                headers: { Authorization: token ? `Bearer ${token}` : false },
+                params: {
+                  inputType: data.inputType,
+                  topicId: data.topic.topicId,
+                  ...(thought.trim() ? { note: thought.trim() } : {}),
+                },
+              },
             )
             .then((response) => {
               if (!response.data.success) throw new Error('upload failed')

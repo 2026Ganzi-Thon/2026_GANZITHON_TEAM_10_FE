@@ -26,7 +26,7 @@ export const DrawingMethod = () => {
   const [topicAttempt, setTopicAttempt] = useState(0)
   const canStart = programActivity
     ? topic?.title === programActivity.topic
-    : isPreview || Boolean(topic) || topicError
+    : isPreview || Boolean(topic)
 
   useEffect(() => {
     if (isPreview && !programActivity) return
@@ -85,7 +85,7 @@ export const DrawingMethod = () => {
                 ? '내 마음속 방을 그려볼까요?'
                 : (topic?.title ?? '주제를 불러오고 있어요.'))}
           </h1>
-          {programActivity && topicError && (
+          {topicError && (
             <div className={styles.topicError}>
               <p role="alert">선택한 주제를 불러오지 못했어요.</p>
               <Button
