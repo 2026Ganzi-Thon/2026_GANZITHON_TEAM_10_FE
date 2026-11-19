@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -13,6 +13,8 @@ import { apiClient } from '@/lib/api-client'
 import { HomeLayout } from '@/components'
 import { PersonalProgramHomeSection } from '@/features/personal-program/ProgramOverview'
 import { readPrograms } from '@/features/personal-program/programMock'
+import type { PersonalProgram } from '@/features/personal-program/programSchedule'
+import { rounds } from '@/features/personal-program/programSchedule'
 import banner1 from '@/assets/home/home-banner-1.png'
 import banner2 from '@/assets/home/home-banner-2.png'
 import banner3 from '@/assets/home/home-banner-3.png'
@@ -151,15 +153,24 @@ export const Home = () => {
   const { user, sheep, record, meetings, retry } = useHomeData(preview)
   const [slide, setSlide] = useState(0)
   const [expanded, setExpanded] = useState(false)
-  const programs = preview ? (emptyPreview ? [] : readPrograms('home-list')) : readPrograms()
-  const activePrograms = programs.filter((program) => !program.cancelled && program.completed < 3)
+  const [, retryPrograms] = useReducer((attempt: number) => attempt + 1, 0)
+  let programs: PersonalProgram[] | null
+  try {
+    programs = emptyPreview ? [] : readPrograms(preview ? 'home-list' : undefined)
+  } catch {
+    programs = null
+  }
+  const hasActivePrograms = programs?.some(
+    (program) => !program.cancelled && program.completed < rounds.length,
+  )
   const noActivity =
     emptyPreview ||
     (record.status === 'ready' &&
       !record.data &&
       meetings.status === 'ready' &&
       !meetings.data?.count &&
-      activePrograms.length === 0)
+      programs !== null &&
+      !hasActivePrograms)
   useEffect(() => {
     const timer = window.setInterval(
       () => setSlide((current) => (current + 1) % banners.length),
@@ -255,9 +266,10 @@ export const Home = () => {
                   )}
                 </section>
               )}
-              {activePrograms.length > 0 && (
+              {(programs === null || hasActivePrograms) && (
                 <PersonalProgramHomeSection
                   programs={programs}
+                  onRetry={retryPrograms}
                   getProgramLink={
                     preview
                       ? (id) => `/sessions?programId=${encodeURIComponent(id)}&mock=home-list`

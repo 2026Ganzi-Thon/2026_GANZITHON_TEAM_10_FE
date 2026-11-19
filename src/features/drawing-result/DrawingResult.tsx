@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useBlocker, useNavigate } from 'react-router-dom'
 import type { To } from 'react-router-dom'
 import backArrow from '@/assets/drawing-result/back-arrow.svg'
@@ -10,13 +10,13 @@ import nextArrow from '@/assets/drawing-result/next-arrow.svg'
 import woolReward from '@/assets/drawing-result/wool-reward.png'
 import { Button, Modal } from '@/components'
 import { ConversationMessages } from '@/features/drawing-conversation/ConversationMessages'
+import { DrawingImage } from '@/features/drawing-conversation/DrawingImage'
 import { discardConversation } from '@/features/drawing-conversation/conversationMock'
 import chatStyles from '@/features/drawing-conversation/DrawingConversation.module.css'
 import { useModal } from '@/hooks/useModal'
-import { readReflections } from '@/lib/mock-reflections'
+import { getReflectionStorageKey, readReflections } from '@/lib/mock-reflections'
 import type { MockRecord } from '@/lib/mock-reflections'
 import { getMockStorageScope } from '@/lib/mock-storage'
-import { completeProgramActivity } from '@/features/personal-program/programMock'
 import type { FirstReflection } from '@/features/personal-program/programSchedule'
 import { loadProgramConcern } from './programConcern'
 import {
@@ -72,7 +72,6 @@ export const DrawingResult = ({
   const [savingDestination, setSavingDestination] = useState<Destination | null>(null)
   const [concernFailed, setConcernFailed] = useState(false)
   const [failedSave, setFailedSave] = useState<SaveFailure | null>(null)
-  const [dailyLimitExit, setDailyLimitExit] = useState<ExitDestination | null>(null)
   const [activityUnavailable, setActivityUnavailable] = useState(false)
   const [reward, setReward] = useState<{ destination: Destination; amount: number } | null>(null)
   const { isOpen: showLeave, openModal: openLeave, closeModal: closeLeave } = useModal()
@@ -83,23 +82,27 @@ export const DrawingResult = ({
   const mockSaveFailed = useRef(false)
   const conversationButton = useRef<HTMLButtonElement>(null)
   const closeConversationButton = useRef<HTMLButtonElement>(null)
+  const rewardConfirmButton = useRef<HTMLButtonElement>(null)
   const openedConversation = useRef(false)
   const isSaving = savingDestination !== null
   const programActivity = source?.programActivity
   const programScenario = import.meta.env.DEV ? programActivity?.mock : undefined
   const previewWallet = scenario === 'wool' || scenario === 'wool-session'
   const [preview] = useState(() => createReflectionPreview(scenario, source))
-  const readSaveStatus = () => {
-    if (!source) return null
+  const readSaveStatus = useCallback(() => {
+    if (!source || !storageScope || storageScope !== getMockStorageScope()) return null
     try {
-      return getReflectionSaveStatus(
+      const status = getReflectionSaveStatus(
         preview ?? readReflections(previewWallet),
         source.drawing.drawingId,
+        undefined,
+        source.recordId,
       )
+      return storageScope === getMockStorageScope() ? status : null
     } catch {
       return null
     }
-  }
+  }, [source, preview, previewWallet, storageScope])
   const [recordSaved, setRecordSaved] = useState(() => readSaveStatus() === 'already-saved')
   const savingLabel = recordSaved ? '이동 중…' : '기록 저장 중…'
 
@@ -138,7 +141,45 @@ export const DrawingResult = ({
     }
   }, [source, scenario, loadAttempt, result])
 
-  useEffect(() => () => activeSave.current?.abort(), [])
+  useEffect(() => {
+    const cancelSave = () => {
+      activeSave.current?.abort()
+      activeSave.current = null
+    }
+    const restorePage = (event: PageTransitionEvent) => {
+      if (event.persisted) setSavingDestination(null)
+    }
+    window.addEventListener('pagehide', cancelSave)
+    window.addEventListener('pageshow', restorePage)
+    return () => {
+      cancelSave()
+      window.removeEventListener('pagehide', cancelSave)
+      window.removeEventListener('pageshow', restorePage)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!source || preview || !storageScope) return
+    let recordKey: string
+    try {
+      recordKey = getReflectionStorageKey(previewWallet)
+    } catch {
+      return
+    }
+    const syncSavedStatus = () => {
+      const status = readSaveStatus()
+      if (status !== null) setRecordSaved(status === 'already-saved')
+    }
+    const onStorage = ({ key }: StorageEvent) => {
+      if (key === null || key === recordKey) syncSavedStatus()
+    }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('pageshow', syncSavedStatus)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('pageshow', syncSavedStatus)
+    }
+  }, [source, preview, previewWallet, storageScope, readSaveStatus])
 
   useLayoutEffect(() => {
     if (showConversation && result) {
@@ -164,10 +205,6 @@ export const DrawingResult = ({
   const leaveResult = () => exitResult(programUrl ?? backDestination)
   const handleBack = () => {
     const status = readSaveStatus()
-    if (!recordSaved && status === 'daily-limit') {
-      setDailyLimitExit(backDestination)
-      return
-    }
     if (status === 'already-saved') setRecordSaved(true)
     openLeave()
   }
@@ -179,7 +216,7 @@ export const DrawingResult = ({
     if (!source || historyAction !== 'POP' || sameResult || (recordSaved && !isSaving && !reward)) {
       return false
     }
-    if (!isSaving && !reward && !failedSave && !dailyLimitExit && !activityUnavailable) {
+    if (!isSaving && !reward && !failedSave && !activityUnavailable) {
       handleBack()
     }
     return true
@@ -211,35 +248,26 @@ export const DrawingResult = ({
         if (signal.aborted || storageScope !== getMockStorageScope()) return
         setFailedSave(null)
 
-        if (saved.status === 'daily-limit') {
-          setDailyLimitExit(destination === '/drawing' ? '/drawing' : finishDestination)
-          return
-        }
         if (saved.status === 'activity-unavailable') {
           setActivityUnavailable(true)
           return
         }
 
         savedBeforeFailure = true
-        const otherDrawingSaved =
-          saved.status === 'already-saved' &&
-          saved.record !== undefined &&
-          saved.record.drawingId !== result.drawing.drawingId
-        if (!otherDrawingSaved) setRecordSaved(true)
-        if (saved.status === 'saved') pendingReward.current = saved.sheepReward
-        else savedReflection.current = saved.record
-        if (programActivity) {
-          const canApplyProgress = saved.status === 'saved' || saved.record || preview
-          const progressApplied =
-            canApplyProgress &&
-            (await completeProgramActivity(programActivity, programScenario, signal))
-          if (signal.aborted || storageScope !== getMockStorageScope()) return
-          if (!progressApplied) {
-            setActivityUnavailable(true)
-            return
-          }
-          if (otherDrawingSaved) discardResult()
+        const otherRecordSaved =
+          saved.record &&
+          (saved.record.recordId === undefined
+            ? saved.record.drawingId !== result.drawing.drawingId
+            : saved.record.recordId !== result.recordId)
+        if (!otherRecordSaved) setRecordSaved(true)
+        if (saved.status !== 'already-saved' && saved.sheepEarned === 1)
+          pendingReward.current = saved.sheepEarned
+        savedReflection.current = saved.record
+        if (saved.status === 'progress-pending') {
+          setFailedSave({ destination, recordSaved: true })
+          return
         }
+        if (otherRecordSaved) discardResult()
         saveHandled.current = true
 
         if (pendingReward.current !== null) {
@@ -267,7 +295,7 @@ export const DrawingResult = ({
         }
 
         const firstReflection: FirstReflection = {
-          id: result.drawing.drawingId,
+          recordId: result.recordId,
           concern,
           title: savedReflection.current?.title ?? result.drawing.title,
           story: savedReflection.current?.card?.todaysStory ?? result.card.todaysStory,
@@ -285,8 +313,10 @@ export const DrawingResult = ({
       mockSaveFailed.current = true
       setFailedSave({ destination, recordSaved: savedBeforeFailure })
     } finally {
-      activeSave.current = null
-      if (!signal.aborted) setSavingDestination(null)
+      if (activeSave.current === controller) {
+        activeSave.current = null
+        setSavingDestination(null)
+      }
     }
   }
 
@@ -301,9 +331,11 @@ export const DrawingResult = ({
     { label: '대화에서 떠올린 생각', icon: detailThoughts, text: result?.card.thoughts?.trim() },
   ].filter(({ text }) => text)
   const imageUrl = imageFailed ? undefined : result?.drawing.imageUrl
+  const hasImage = Boolean(imageUrl || (!imageFailed && result?.drawing.previewPhoto))
   const isReadingConversation = showConversation && result !== null
   const canSaveOnLeave = !recordSaved && result !== null
   const failedLeavingForDrawing = failedSave?.destination === '/drawing'
+  const progressFailed = failedSave?.recordSaved && Boolean(programActivity)
 
   return (
     <>
@@ -362,9 +394,10 @@ export const DrawingResult = ({
             <>
               <figure className={styles.drawing}>
                 <div className={styles.imageFrame}>
-                  {imageUrl ? (
-                    <img
+                  {hasImage ? (
+                    <DrawingImage
                       src={imageUrl}
+                      previewPhoto={result.drawing.previewPhoto}
                       alt={result.drawing.title}
                       onError={() => setImageFailed(true)}
                     />
@@ -421,10 +454,10 @@ export const DrawingResult = ({
                   <h2 id="result-next" className="text-choice">
                     오늘의 마음을 이어가 볼까요?
                   </h2>
-                  <p className="text-caption">
+                  <p className="text-caption" aria-live="polite">
                     {recordSaved
-                      ? '이미 저장한 회고예요. 양털은 처음 저장할 때 받아요.'
-                      : '하루 첫 회고만 개인 기록에 저장해요.'}
+                      ? '이미 저장한 회고예요.'
+                      : '회고를 개인 기록에 남겨요. 양털은 하루 첫 저장 때 받아요.'}
                   </p>
                   {nextActivities.map(({ destination, title, description }) => (
                     <Button
@@ -448,7 +481,7 @@ export const DrawingResult = ({
                 </section>
               )}
 
-              {isSaving && !failedSave && !dailyLimitExit && (
+              {isSaving && !failedSave && (
                 <p className={styles.saveStatus} role="status">
                   {recordSaved ? '다음 화면으로 이동하고 있어요.' : '기록을 저장하고 있어요.'}
                 </p>
@@ -502,9 +535,11 @@ export const DrawingResult = ({
               if (!isSaving) setFailedSave(null)
             }}
             title={
-              failedSave.recordSaved
+              progressFailed
                 ? '활동 진행률을 반영하지 못했어요.'
-                : '기록을 저장하지 못했어요.'
+                : failedSave.recordSaved
+                  ? '기록을 확인하지 못했어요.'
+                  : '기록을 저장하지 못했어요.'
             }
             actions={[
               {
@@ -528,12 +563,16 @@ export const DrawingResult = ({
           >
             {isSaving ? (
               <p role="status">
-                {failedSave.recordSaved
+                {progressFailed
                   ? '활동 진행률을 다시 반영하고 있어요.'
-                  : '기록을 다시 저장하고 있어요.'}
+                  : failedSave.recordSaved
+                    ? '저장한 기록을 확인하고 있어요.'
+                    : '기록을 다시 저장하고 있어요.'}
               </p>
-            ) : failedSave.recordSaved ? (
+            ) : progressFailed ? (
               '회고는 저장했어요. 다시 시도하면 활동 진행률을 반영할 수 있어요.'
+            ) : failedSave.recordSaved ? (
+              '저장된 회고를 확인하려면 다시 시도해 주세요.'
             ) : programActivity ? (
               '다시 시도하거나 모양 화면으로 돌아갈 수 있어요.'
             ) : failedLeavingForDrawing ? (
@@ -543,25 +582,6 @@ export const DrawingResult = ({
             )}
           </Modal>
         </div>
-      )}
-
-      {dailyLimitExit && (
-        <Modal
-          isOpen
-          onClose={() => setDailyLimitExit(null)}
-          title="오늘의 회고는 이미 저장했어요."
-          actions={[
-            { label: '결과로 돌아가기', onClick: () => setDailyLimitExit(null) },
-            {
-              label: '저장 없이 나가기',
-              color: 'gray',
-              onClick: dailyLimitExit === '/home' ? goHome : leaveResult,
-            },
-          ]}
-        >
-          회고 저장과 양털 받기는 하루에 한 번만 가능해요.
-          <br />이 화면을 나가면 다시 볼 수 없어요.
-        </Modal>
       )}
 
       {activityUnavailable && (
@@ -577,18 +597,31 @@ export const DrawingResult = ({
 
       {reward && (
         <div className={styles.rewardDialog}>
-          <Modal isOpen onClose={confirmReward} ariaLabel="회고 저장 및 양털 획득">
+          <Modal
+            isOpen
+            onClose={() => rewardConfirmButton.current?.focus()}
+            ariaLabel="회고 저장 및 양털 획득"
+          >
             <div className={styles.reward}>
-              <div className={styles.rewardGraphic} tabIndex={-1} autoFocus>
+              <div className={styles.rewardGraphic}>
                 <img src={woolReward} alt="" />
                 <h2 className={styles.rewardMessage}>
                   <strong>양털 {reward.amount}개</strong>를
                   <br />
-                  받았어요.
+                  획득했어요!
                 </h2>
               </div>
-              <p className={styles.rewardNote}>오늘의 회고를 저장했어요.</p>
-              <Button className={styles.rewardConfirm} onClick={confirmReward}>
+              <p className={styles.rewardNote}>
+                오늘 첫 회고를 저장했어요.
+                <br />
+                오늘 남기는 다른 회고도 기록에 저장할 수 있어요.
+              </p>
+              <Button
+                className={styles.rewardConfirm}
+                ref={rewardConfirmButton}
+                onClick={confirmReward}
+                autoFocus
+              >
                 확인
               </Button>
             </div>
@@ -611,8 +644,13 @@ export const DrawingResult = ({
           </header>
           <div className={chatStyles.drawingHeading}>
             <div className={chatStyles.drawingCard}>
-              {imageUrl ? (
-                <img className={chatStyles.drawingImage} src={imageUrl} alt="" />
+              {hasImage ? (
+                <DrawingImage
+                  className={chatStyles.drawingImage}
+                  src={imageUrl}
+                  previewPhoto={result?.drawing.previewPhoto}
+                  alt=""
+                />
               ) : (
                 <span className={chatStyles.drawingPlaceholder} aria-hidden="true">
                   그림

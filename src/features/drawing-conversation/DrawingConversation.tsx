@@ -12,9 +12,11 @@ import { faClipboard, faCommentDots } from '@fortawesome/free-regular-svg-icons'
 import { Button, Modal } from '@/components'
 import { useModal } from '@/hooks/useModal'
 import { getWoolBalance, readReflections, spendWoolForQuestion } from '@/lib/mock-reflections'
+import type { RecordId } from '@/lib/mock-reflections'
 import { getMockStorageScope } from '@/lib/mock-storage'
 import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
 import { ConversationLoading } from './ConversationLoading'
+import { DrawingImage } from './DrawingImage'
 import { ConversationBubble, ConversationMessages } from './ConversationMessages'
 import {
   getReplyText,
@@ -29,9 +31,9 @@ import styles from './DrawingConversation.module.css'
 
 type DrawingConversationProps = {
   drawing: ConversationDrawing
-  activityId?: number
-  resultState?: object
+  recordId: RecordId
   storageKey: string
+  legacyStorageKey?: string
   storageScope: string
   programActivity?: ProgramActivityHandoff
   isPreview: boolean
@@ -56,9 +58,9 @@ const isDialogBackdrop = ({ target, clientX, clientY }: MouseEvent<HTMLDivElemen
 
 export const DrawingConversation = ({
   drawing,
-  activityId,
-  resultState,
+  recordId,
   storageKey,
+  legacyStorageKey,
   storageScope,
   programActivity,
   isPreview,
@@ -68,7 +70,8 @@ export const DrawingConversation = ({
   const isProgramPreview = Boolean(programActivity?.mock)
   const previewWallet = scenario === 'wool'
   const [conversation, setConversation] = useState(() => {
-    const saved = readConversation(storageKey)
+    const saved =
+      readConversation(storageKey) ?? (legacyStorageKey ? readConversation(legacyStorageKey) : null)
     return isPreview && saved?.status === 'ended' ? null : saved
   })
   const [startAttempt, setStartAttempt] = useState(0)
@@ -94,6 +97,19 @@ export const DrawingConversation = ({
   const isAsking = conversation?.status === 'asking'
   const isPending = pending !== null
   const closeConfirmation = () => setConfirmation(null)
+
+  useEffect(() => {
+    if (
+      !conversation ||
+      !legacyStorageKey ||
+      storageScope !== getMockStorageScope() ||
+      readConversation(storageKey)
+    )
+      return
+    saveConversation(storageKey, conversation)
+    const restored = readConversation(storageKey)
+    if (restored && restored.id === conversation.id) saveConversation(legacyStorageKey, null)
+  }, [conversation, legacyStorageKey, storageKey, storageScope])
 
   useEffect(() => {
     if (conversation || scenario === 'loading') return
@@ -199,13 +215,12 @@ export const DrawingConversation = ({
         replace
         to={previewWallet ? '/drawing/result?mock=wool-session' : '/drawing/result'}
         state={{
-          ...resultState,
           drawing,
           conversation,
           programActivity,
           storageScope,
           conversationStorageKey: storageKey,
-          activityId,
+          recordId,
         }}
       />
     )
@@ -213,13 +228,19 @@ export const DrawingConversation = ({
 
   const pendingReply = pending ? getReplyText(pending) : ''
   const drawingNote = drawing.note?.trim()
-  const image = drawing.imageUrl ? (
-    <img className={styles.drawingImage} src={drawing.imageUrl} alt={drawing.title} />
-  ) : (
-    <span className={styles.drawingPlaceholder} aria-hidden="true">
-      그림
-    </span>
-  )
+  const image =
+    drawing.imageUrl || drawing.previewPhoto ? (
+      <DrawingImage
+        className={styles.drawingImage}
+        src={drawing.imageUrl}
+        previewPhoto={drawing.previewPhoto}
+        alt={drawing.title}
+      />
+    ) : (
+      <span className={styles.drawingPlaceholder} aria-hidden="true">
+        그림
+      </span>
+    )
 
   return (
     <div className={styles.page}>

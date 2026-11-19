@@ -4,6 +4,8 @@ import { exampleDrawing } from '@/features/drawing-conversation/conversationMock
 import type { ConversationDrawing } from '@/features/drawing-conversation/conversationMock'
 import type { ProgramActivityHandoff } from '@/features/personal-program/programMock'
 import { useMockStorageScope } from '@/hooks/useMockStorageScope'
+import { getMockRecordId, isRecordId } from '@/lib/mock-reflections'
+import type { RecordId } from '@/lib/mock-reflections'
 
 export const DrawingConversationPage = () => {
   const location = useLocation()
@@ -11,6 +13,7 @@ export const DrawingConversationPage = () => {
   const storageScope = useMockStorageScope()
   const state = location.state as {
     drawing?: ConversationDrawing
+    recordId?: RecordId
     activityId?: number
     programActivity?: ProgramActivityHandoff
     storageScope?: string
@@ -25,18 +28,27 @@ export const DrawingConversationPage = () => {
   }
 
   const activity = state?.programActivity
+  const fallbackRecordId = getMockRecordId(drawing.drawingId)
+  const handoffRecordId = state?.recordId ?? state?.activityId
+  const recordId = isRecordId(handoffRecordId) ? handoffRecordId : fallbackRecordId
   const drawingKey = `${storageScope}:mock-conversation:${drawing.drawingId}:${scenario ?? 'default'}`
-  const storageKey = activity
+  const activityKey = activity
     ? `${drawingKey}:${activity.mock ?? 'program'}:${activity.programId}:${activity.round}:${activity.date}`
     : drawingKey
+  const storageKey =
+    recordId === fallbackRecordId
+      ? activityKey
+      : `${activityKey}:record:${JSON.stringify(recordId)}`
 
   return (
     <DrawingConversation
       key={storageKey}
       drawing={drawing}
-      activityId={state?.activityId}
-      resultState={state ?? undefined}
+      recordId={recordId}
       storageKey={storageKey}
+      legacyStorageKey={
+        drawing.drawingId > 0 && storageKey !== activityKey ? activityKey : undefined
+      }
       storageScope={storageScope}
       programActivity={activity}
       isPreview={!state?.drawing}

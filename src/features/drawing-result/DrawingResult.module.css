@@ -257,10 +257,6 @@
   aspect-ratio: 322 / 288;
 }
 
-.rewardGraphic:focus {
-  outline: none;
-}
-
 .rewardGraphic img {
   position: absolute;
   top: 0;

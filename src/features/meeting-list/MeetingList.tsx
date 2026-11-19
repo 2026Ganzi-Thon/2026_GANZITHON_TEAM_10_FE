@@ -433,13 +433,14 @@ const PastMeetingsSection = ({
   )
 }
 
-export const MeetingList = () => {
+export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | undefined }) => {
   const pageRef = useRef<HTMLDivElement>(null)
   const filtersRef = useRef<HTMLDivElement>(null)
   const returnMeetingRef = useRef<string | undefined>(undefined)
   const returnActionRef = useRef<string | undefined>(undefined)
   const noticePositionRef = useRef<ReturnPosition | undefined>(undefined)
   const { key, search, state } = useLocation()
+  const createPath = getCreatePath()
   const originKey = typeof state?.meetingListKey === 'string' ? state.meetingListKey : undefined
   const navigate = useNavigate()
   const navigationType = useNavigationType()
@@ -825,7 +826,15 @@ export const MeetingList = () => {
           )}
         </div>
         <div className={styles.create}>
-          <Button disabled>
+          <Button
+            disabled={!createPath}
+            onClick={() => {
+              if (!createPath) return
+              navigate(createPath, {
+                state: { fromMeetingList: true, meetingListSearch: search, meetingListKey: key },
+              })
+            }}
+          >
             <img src={plusIcon} alt="" />
             모임 만들기
           </Button>
