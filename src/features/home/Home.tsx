@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -11,9 +11,12 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { apiClient } from '@/lib/api-client'
 import { HomeLayout } from '@/components'
-import { PersonalProgramHomeSection } from '@/features/personal-program/ProgramOverview'
+import {
+  PersonalProgramHomeSection,
+  ServerShapeHomeSection,
+} from '@/features/personal-program/ProgramOverview'
+import type { ServerShape } from '@/features/personal-program/ProgramOverview'
 import { readPrograms } from '@/features/personal-program/programMock'
-import type { PersonalProgram } from '@/features/personal-program/programSchedule'
 import { rounds } from '@/features/personal-program/programSchedule'
 import banner1 from '@/assets/home/home-banner-1.png'
 import banner2 from '@/assets/home/home-banner-2.png'
@@ -53,6 +56,7 @@ const useHomeData = (preview: boolean) => {
   const [sheep, setSheep] = useState<Loadable<{ balance: number }>>(loading)
   const [record, setRecord] = useState<Loadable<RecordItem>>(loading)
   const [meetings, setMeetings] = useState<Loadable<Meetings>>(loading)
+  const [shape, setShape] = useState<Loadable<ServerShape>>(loading)
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     if (preview) return
@@ -71,6 +75,19 @@ const useHomeData = (preview: boolean) => {
         if (!controller.signal.aborted) set({ status: 'error', data: null })
       }
     }
+    const getShape = async () => {
+      setShape(loading())
+      try {
+        const { data } = await apiClient.get<Response<ServerShape>>('/api/shapes/me', {
+          signal: controller.signal,
+        })
+        if (!data.success) throw new Error('Invalid response')
+        setShape({ status: 'ready', data: data.data })
+      } catch {
+        if (!controller.signal.aborted) setShape({ status: 'error', data: null })
+      }
+    }
+    void getShape()
     void get('/api/users/me', setUser, (data) => data as { nickname: string })
     void get('/api/sheep', setSheep, (data) => data as { balance: number })
     void get(
@@ -98,9 +115,10 @@ const useHomeData = (preview: boolean) => {
         sheep: { status: 'ready' as const, data: { balance: 2 } },
         record: { status: 'ready' as const, data: { recordId: 1, imageUrl: previewDrawing } },
         meetings: { status: 'ready' as const, data: previewMeetings },
+        shape: { status: 'ready' as const, data: null },
         retry: () => setRetry((v) => v + 1),
       }
-    : { user, sheep, record, meetings, retry: () => setRetry((v) => v + 1) }
+    : { user, sheep, record, meetings, shape, retry: () => setRetry((v) => v + 1) }
 }
 
 /** 인증이 필요한 같은 서버의 그림은 공통 클라이언트로 받아 표시한다. */
@@ -161,26 +179,20 @@ export const Home = () => {
   const preview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
   const params = new URLSearchParams(search)
   const emptyPreview = preview && params.get('preview') === 'empty'
-  const { user, sheep, record, meetings, retry } = useHomeData(preview)
+  const { user, sheep, record, meetings, shape, retry } = useHomeData(preview)
   const [slide, setSlide] = useState(0)
   const [expanded, setExpanded] = useState(false)
-  const [, retryPrograms] = useReducer((attempt: number) => attempt + 1, 0)
-  let programs: PersonalProgram[] | null
-  try {
-    programs = emptyPreview ? [] : readPrograms(preview ? 'home-list' : undefined)
-  } catch {
-    programs = null
-  }
-  const hasActivePrograms = programs?.some(
-    (program) => !program.cancelled && program.completed < rounds.length,
-  )
+  const programs = preview && !emptyPreview ? readPrograms('home-list') : []
+  const hasActivePrograms = preview
+    ? programs.some((program) => !program.cancelled && program.completed < rounds.length)
+    : shape.data !== null && shape.data.completedRounds < shape.data.totalRounds
   const noActivity =
     emptyPreview ||
     (record.status === 'ready' &&
       !record.data &&
       meetings.status === 'ready' &&
       !meetings.data?.count &&
-      programs !== null &&
+      shape.status === 'ready' &&
       !hasActivePrograms)
   useEffect(() => {
     const timer = window.setInterval(
@@ -189,7 +201,7 @@ export const Home = () => {
     )
     return () => window.clearInterval(timer)
   }, [])
-  const hasError = [user, sheep, record, meetings].some((item) => item.status === 'error')
+  const hasError = [user, sheep, record, meetings, shape].some((item) => item.status === 'error')
   return (
     <HomeLayout>
       <div className={styles.page}>
@@ -277,16 +289,16 @@ export const Home = () => {
                   )}
                 </section>
               )}
-              {(programs === null || hasActivePrograms) && (
+              {preview && hasActivePrograms && (
                 <PersonalProgramHomeSection
                   programs={programs}
-                  onRetry={retryPrograms}
-                  getProgramLink={
-                    preview
-                      ? (id) => `/sessions?programId=${encodeURIComponent(id)}&mock=home-list`
-                      : undefined
+                  getProgramLink={(id) =>
+                    `/sessions?programId=${encodeURIComponent(id)}&mock=home-list`
                   }
                 />
+              )}
+              {!preview && shape.data && hasActivePrograms && (
+                <ServerShapeHomeSection shape={shape.data} />
               )}
               {meetings.data && meetings.data.count > 0 && (
                 <section className={styles.card}>
