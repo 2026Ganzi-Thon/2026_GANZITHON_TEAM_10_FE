@@ -14,6 +14,8 @@ export type Conversation = {
   id?: string
   messages: Message[]
   questionIndex: number
+  canExtend?: boolean
+  supportNotice?: { message: string; actionLabel: string; phone: string }
   status: 'asking' | 'review' | 'support' | 'ended'
 }
 

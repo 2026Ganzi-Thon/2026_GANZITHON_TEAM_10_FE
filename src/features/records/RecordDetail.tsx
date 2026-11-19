@@ -10,10 +10,15 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { Button, PageHeader } from '@/components'
 import { ConversationMessages } from '@/features/drawing-conversation'
-import { apiClient } from '@/lib/api-client'
+import {
+  loadServerDrawingResult,
+  openDrawingConversation,
+} from '@/features/drawing-conversation/conversationApi'
+import { useMockStorageScope } from '@/hooks/useMockStorageScope'
+import { moyangRequest } from '@/lib/moyang-api'
 import drawing from '@/assets/drawing/drawing-2.png'
 import { RecordImage } from './RecordImage'
-import type { RecordDetail as Detail, RecordItem, Response } from './types'
+import type { RecordDetail as Detail, RecordItem } from './types'
 import styles from './Records.module.css'
 
 const mock: Detail = {
@@ -40,18 +45,24 @@ const mock: Detail = {
     { sequenceNo: 2, role: 'USER', content: '편안한 풍경에 대해 이야기하고 싶어요.' },
   ],
 }
-/** 회고 상세와 저장된 대화를 조회해 표시한다. */
-export const RecordDetailContent = ({
-  recordId,
-  preview,
-  record,
-  onClose,
-}: {
+type RecordDetailContentProps = {
   recordId: string
   preview: boolean
   record?: RecordItem
   onClose?: () => void
-}) => {
+}
+
+export const RecordDetailContent = (props: RecordDetailContentProps) => {
+  const scope = useMockStorageScope()
+  return <ScopedRecordDetailContent key={`${scope}:${props.recordId}`} {...props} />
+}
+
+const ScopedRecordDetailContent = ({
+  recordId,
+  preview,
+  record,
+  onClose,
+}: RecordDetailContentProps) => {
   const [detail, setDetail] = useState<Detail | null>(preview ? { ...mock, ...record } : null)
   const [error, setError] = useState(false)
   const [showConversation, setShowConversation] = useState(false)
@@ -59,13 +70,37 @@ export const RecordDetailContent = ({
   useEffect(() => {
     if (preview) return
     const controller = new AbortController()
-    apiClient
-      .get<Response<Detail>>(`/api/records/${encodeURIComponent(recordId ?? '')}`, {
-        signal: controller.signal,
-      })
-      .then(({ data }) => {
-        if (!data.success || !data.data) throw new Error('Invalid response')
-        setDetail(data.data)
+    const { signal } = controller
+    moyangRequest(signal)
+      .json<Detail>(`/api/records/${encodeURIComponent(recordId)}`)
+      .then(async (saved) => {
+        if (signal.aborted) return
+        if (!saved || saved.recordId !== Number(recordId)) throw new Error('Invalid response')
+        setDetail(saved)
+        if (saved.todaysStory && saved.whatISaid && saved.thoughts) return
+
+        const drawingId = Number(/^\/api\/drawings\/(\d+)\/image$/.exec(saved.imageUrl ?? '')?.[1])
+        if (!Number.isSafeInteger(drawingId) || drawingId <= 0) return
+
+        try {
+          const opened = await openDrawingConversation(drawingId, signal)
+          if (opened?.recordId !== saved.recordId || !opened.conversationId) return
+          const result = await loadServerDrawingResult(
+            opened.conversationId,
+            opened.drawing,
+            signal,
+          )
+          if (!signal.aborted && result.recordId === saved.recordId) {
+            setDetail({
+              ...saved,
+              todaysStory: saved.todaysStory || result.card.todaysStory,
+              whatISaid: saved.whatISaid || result.card.whatISaid,
+              thoughts: saved.thoughts || result.card.thoughts,
+            })
+          }
+        } catch {
+          return
+        }
       })
       .catch(() => {
         if (!controller.signal.aborted) setError(true)

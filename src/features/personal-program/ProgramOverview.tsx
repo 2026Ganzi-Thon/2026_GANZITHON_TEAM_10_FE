@@ -57,13 +57,17 @@ export const ProgramSchedule = ({ days, date }: { days: number[]; date: string }
 export const ProgramTimeline = ({
   completed,
   activity,
+  availableRounds = rounds.length,
   isSetup,
   firstReflection,
+  concernId,
 }: {
   completed: number
   activity: ProgramActivity | null
+  availableRounds?: number
   isSetup: boolean
   firstReflection?: FirstReflection
+  concernId?: string
 }) => (
   <section
     className={
@@ -73,9 +77,9 @@ export const ProgramTimeline = ({
     <h2>{isSetup ? '미술 활동 단계' : '이런 활동을 진행할 예정이에요'}</h2>
     {isSetup && <p>각 미술 활동의 구체적인 그림 주제는 활동 당일에 공개돼요.</p>}
     <ol className={isSetup ? styles.setupTimeline : styles.timeline}>
-      {getProgramRounds(firstReflection?.concern.id).map((round, index) => {
+      {getProgramRounds(concernId ?? firstReflection?.concern.id).map((round, index) => {
         const isComplete = index < completed
-        const isNext = index === completed
+        const isNext = index === completed && index < availableRounds
         const isToday = activity?.round === index + 1
         const savedReflection = isSetup && index === 0 ? firstReflection : undefined
         return (
@@ -123,22 +127,44 @@ export const PersonalProgramHomeCard = ({
   const nextRound = rounds[program.completed]
 
   return (
-    <Link className={styles.homeCard} to={to}>
-      <div className={styles.homeCardTitle}>
-        <strong>{program.firstReflection.concern.label}</strong>
-        <FontAwesomeIcon icon={faChevronRight} aria-hidden="true" />
-      </div>
-      {nextRound && date && (
-        <p className={styles.homeCardSchedule}>
-          <FontAwesomeIcon icon={faCalendarDays} aria-hidden="true" />
-          <time dateTime={date}>{formatActivityDate(date)}</time>
-          <span>· {nextRound.name}</span>
-        </p>
-      )}
-      <ProgramProgress completed={program.completed} label="진행상황" />
-    </Link>
+    <ProgramHomeCard
+      label={program.firstReflection.concern.label}
+      date={date}
+      round={nextRound?.name}
+      completed={program.completed}
+      to={to}
+    />
   )
 }
+
+export const ProgramHomeCard = ({
+  label,
+  date,
+  round,
+  completed,
+  to,
+}: {
+  label: string
+  date: string | null
+  round?: string
+  completed: number
+  to: string
+}) => (
+  <Link className={styles.homeCard} to={to}>
+    <div className={styles.homeCardTitle}>
+      <strong>{label}</strong>
+      <FontAwesomeIcon icon={faChevronRight} aria-hidden="true" />
+    </div>
+    {round && date && (
+      <p className={styles.homeCardSchedule}>
+        <FontAwesomeIcon icon={faCalendarDays} aria-hidden="true" />
+        <time dateTime={date}>{formatActivityDate(date)}</time>
+        <span>· {round}</span>
+      </p>
+    )}
+    <ProgramProgress completed={completed} label="진행상황" />
+  </Link>
+)
 
 export const PersonalProgramHomeSection = ({
   programs,
@@ -300,15 +326,7 @@ export const ServerShapeHomeSection = ({ shape }: { shape: ServerShape }) => {
             {shape.nextRound !== null && <span>· {shape.nextRound}번째 모양</span>}
           </p>
         )}
-        <div className={styles.progressCard}>
-          <div className={styles.progressLabel}>
-            <span>진행상황</span>
-            <span>
-              {shape.completedRounds} / {shape.totalRounds} 완료
-            </span>
-          </div>
-          <progress aria-label="진행상황" value={shape.completedRounds} max={shape.totalRounds} />
-        </div>
+        <ProgramProgress completed={shape.completedRounds} label="진행상황" />
       </Link>
     </section>
   )

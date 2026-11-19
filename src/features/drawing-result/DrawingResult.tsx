@@ -9,6 +9,10 @@ import detailThoughts from '@/assets/drawing-result/detail-thoughts.svg'
 import nextArrow from '@/assets/drawing-result/next-arrow.svg'
 import woolReward from '@/assets/drawing-result/wool-reward.png'
 import { Button, Modal } from '@/components'
+import {
+  loadServerDrawingResult,
+  saveServerReflection,
+} from '@/features/drawing-conversation/conversationApi'
 import { ConversationMessages } from '@/features/drawing-conversation/ConversationMessages'
 import { DrawingImage } from '@/features/drawing-conversation/DrawingImage'
 import { discardConversation } from '@/features/drawing-conversation/conversationMock'
@@ -16,7 +20,9 @@ import chatStyles from '@/features/drawing-conversation/DrawingConversation.modu
 import { useModal } from '@/hooks/useModal'
 import { getReflectionStorageKey, readReflections } from '@/lib/mock-reflections'
 import type { MockRecord } from '@/lib/mock-reflections'
+import { MoyangApiError, moyangRequest } from '@/lib/moyang-api'
 import { getMockStorageScope } from '@/lib/mock-storage'
+import { readDrawingActivity } from '@/features/personal-program/programSchedule'
 import type { FirstReflection } from '@/features/personal-program/programSchedule'
 import { loadProgramConcern } from './programConcern'
 import {
@@ -85,12 +91,17 @@ export const DrawingResult = ({
   const rewardConfirmButton = useRef<HTMLButtonElement>(null)
   const openedConversation = useRef(false)
   const isSaving = savingDestination !== null
-  const programActivity = source?.programActivity
+  const serverId = source?.serverConversationId
+  const programActivity: DrawingResultSource['programActivity'] =
+    source?.programActivity ??
+    (serverId && storageScope && result
+      ? readDrawingActivity(storageScope, result.drawing.drawingId)
+      : undefined)
   const programScenario = import.meta.env.DEV ? programActivity?.mock : undefined
   const previewWallet = scenario === 'wool' || scenario === 'wool-session'
   const [preview] = useState(() => createReflectionPreview(scenario, source))
   const readSaveStatus = useCallback(() => {
-    if (!source || !storageScope || storageScope !== getMockStorageScope()) return null
+    if (serverId || !source || !storageScope || storageScope !== getMockStorageScope()) return null
     try {
       const status = getReflectionSaveStatus(
         preview ?? readReflections(previewWallet),
@@ -102,7 +113,7 @@ export const DrawingResult = ({
     } catch {
       return null
     }
-  }, [source, preview, previewWallet, storageScope])
+  }, [source, preview, previewWallet, storageScope, serverId])
   const [recordSaved, setRecordSaved] = useState(() => readSaveStatus() === 'already-saved')
   const savingLabel = recordSaved ? '이동 중…' : '기록 저장 중…'
 
@@ -126,20 +137,38 @@ export const DrawingResult = ({
   useEffect(() => {
     if (!source || result) return
 
-    let active = true
-    loadDrawingResult(source, scenario === 'load-error' && loadAttempt === 0).then(
+    const controller = new AbortController()
+    const loading = serverId
+      ? loadServerDrawingResult(serverId, source.drawing, controller.signal)
+      : loadDrawingResult(source, scenario === 'load-error' && loadAttempt === 0)
+    loading.then(
       (data) => {
-        if (active) setResult(data)
+        if (!controller.signal.aborted) setResult(data)
       },
       () => {
-        if (active) setLoadFailed(true)
+        if (!controller.signal.aborted) setLoadFailed(true)
       },
     )
 
     return () => {
-      active = false
+      controller.abort()
     }
-  }, [source, scenario, loadAttempt, result])
+  }, [source, scenario, loadAttempt, result, serverId])
+
+  const resultRecordId = result?.recordId
+  useEffect(() => {
+    if (!serverId || typeof resultRecordId !== 'number') return
+    const controller = new AbortController()
+    moyangRequest(controller.signal)
+      .json(`/api/records/${resultRecordId}`)
+      .then(
+        () => {
+          if (!controller.signal.aborted) setRecordSaved(true)
+        },
+        () => {},
+      )
+    return () => controller.abort()
+  }, [serverId, resultRecordId])
 
   useEffect(() => {
     const cancelSave = () => {
@@ -159,7 +188,7 @@ export const DrawingResult = ({
   }, [])
 
   useEffect(() => {
-    if (!source || preview || !storageScope) return
+    if (serverId || !source || preview || !storageScope) return
     let recordKey: string
     try {
       recordKey = getReflectionStorageKey(previewWallet)
@@ -179,7 +208,7 @@ export const DrawingResult = ({
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('pageshow', syncSavedStatus)
     }
-  }, [source, preview, previewWallet, storageScope, readSaveStatus])
+  }, [source, preview, previewWallet, storageScope, readSaveStatus, serverId])
 
   useLayoutEffect(() => {
     if (showConversation && result) {
@@ -238,13 +267,23 @@ export const DrawingResult = ({
 
     try {
       if (!saveHandled.current) {
-        const saved = await saveDrawingResult(result, {
-          preview,
-          previewWallet,
-          fail: scenario === 'save-error' && !mockSaveFailed.current,
-          signal,
-          activity: programActivity,
-        })
+        if (serverId && typeof result.recordId !== 'number') {
+          throw new MoyangApiError('INVALID_RECORD_ID')
+        }
+        const saved =
+          serverId && typeof result.recordId === 'number'
+            ? {
+                status: 'saved' as const,
+                ...(await saveServerReflection(result.recordId, result.drawing.title, signal)),
+                record: undefined,
+              }
+            : await saveDrawingResult(result, {
+                preview,
+                previewWallet,
+                fail: scenario === 'save-error' && !mockSaveFailed.current,
+                signal,
+                activity: programActivity,
+              })
         if (signal.aborted || storageScope !== getMockStorageScope()) return
         setFailedSave(null)
 
@@ -279,7 +318,7 @@ export const DrawingResult = ({
 
       if (destination === '/sessions') {
         if (programUrl && programActivity) {
-          navigate(programUrl, {
+          navigate(serverId ? '/sessions' : programUrl, {
             replace: true,
             state: { completedRound: programActivity.round, storageScope },
           })
@@ -612,7 +651,7 @@ export const DrawingResult = ({
                 </h2>
               </div>
               <p className={styles.rewardNote}>
-                오늘 첫 회고를 저장했어요.
+                {serverId ? '회고를 저장했어요.' : '오늘 첫 회고를 저장했어요.'}
                 <br />
                 오늘 남기는 다른 회고도 기록에 저장할 수 있어요.
               </p>

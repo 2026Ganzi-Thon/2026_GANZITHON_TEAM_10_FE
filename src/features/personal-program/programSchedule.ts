@@ -95,6 +95,60 @@ export type ProgramActivity = {
   description: string
 }
 
+const drawingActivityKey = (scope: string, drawingId: number) =>
+  JSON.stringify(['moyang:program-drawing', scope, drawingId])
+
+export const rememberDrawingActivity = (
+  scope: string,
+  drawingId: number,
+  activity: ProgramActivity,
+) => {
+  const key = drawingActivityKey(scope, drawingId)
+  const saved = JSON.stringify(activity)
+  try {
+    localStorage.setItem(key, saved)
+  } catch {
+    try {
+      sessionStorage.setItem(key, saved)
+    } catch {
+      return
+    }
+  }
+}
+
+const readStoredDrawingActivity = (
+  key: string,
+  storage: 'localStorage' | 'sessionStorage',
+): ProgramActivity | undefined => {
+  try {
+    const saved = globalThis[storage].getItem(key)
+    const activity = saved ? (JSON.parse(saved) as Partial<ProgramActivity> | null) : null
+    return activity &&
+      typeof activity.programId === 'string' &&
+      typeof activity.round === 'number' &&
+      Number.isInteger(activity.round) &&
+      activity.round >= 1 &&
+      activity.round <= rounds.length &&
+      typeof activity.date === 'string' &&
+      typeof activity.concern?.id === 'string' &&
+      typeof activity.concern.label === 'string' &&
+      typeof activity.topic === 'string' &&
+      typeof activity.description === 'string'
+      ? (activity as ProgramActivity)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export const readDrawingActivity = (scope: string, drawingId: number) => {
+  const key = drawingActivityKey(scope, drawingId)
+  return (
+    readStoredDrawingActivity(key, 'localStorage') ??
+    readStoredDrawingActivity(key, 'sessionStorage')
+  )
+}
+
 const kstDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' })
 const activityDate = new Intl.DateTimeFormat('ko-KR', {
   month: 'long',

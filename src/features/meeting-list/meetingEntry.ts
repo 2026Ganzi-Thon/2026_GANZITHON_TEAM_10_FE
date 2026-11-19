@@ -29,6 +29,12 @@ export const getMeetingListPath = (search: unknown) =>
 type MeetingEntry =
   { canEnter: true; label: string } | { canEnter: false; label: string; notice: MeetingNotice }
 
+export const isMeetingPreview = (search: string, id?: string) => {
+  if (!import.meta.env.DEV) return false
+  const params = new URLSearchParams(search)
+  return params.has('mock') || params.has('preview') || Boolean(id?.startsWith('preview-'))
+}
+
 export const getMeetingPath = ({ id, kind, status }: Meeting) => {
   const path = `/meetings/${encodeURIComponent(id)}`
   const preview = import.meta.env.DEV && id.startsWith('preview-') ? '?preview' : ''
@@ -61,3 +67,8 @@ export const getMeetingEntry = (meeting: Meeting): MeetingEntry => {
   }
   return { canEnter: true, label: '대기실 입장하기' }
 }
+
+export const getMeetingRoomPath = (meeting: Meeting) =>
+  meeting.server && meeting.kind === 'scheduled' && meeting.status === 'in-progress'
+    ? `/meetings/${encodeURIComponent(meeting.id)}/waiting`
+    : getMeetingPath(meeting)

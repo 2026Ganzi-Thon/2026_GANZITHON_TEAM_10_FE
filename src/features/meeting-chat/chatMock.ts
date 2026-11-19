@@ -41,6 +41,7 @@ export type MeetingChat = {
 
 export type ChatStorageContext = {
   scope: string
+  server?: boolean
   meetingId: string
   scenario?: string | null
 }

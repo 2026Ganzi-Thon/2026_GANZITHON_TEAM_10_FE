@@ -1,3 +1,6 @@
+import { hasMoyangApi } from '@/lib/moyang-api'
+import { getServerMeetingChat, meetingApiMessage } from '@/features/meeting-list/meetingApi'
+import { useServerMeetingChat } from './useServerMeetingChat'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Button, Modal, PageHeader } from '@/components'
@@ -19,6 +22,7 @@ import {
 import type { DrawingDraftPatch, MeetingDrawingDraft } from './drawingDraft'
 import { maskMeetingText } from './chatContent'
 import { useDraftNavigation } from './useDraftNavigation'
+import { isMeetingPreview } from '@/features/meeting-list/meetingEntry'
 import styles from './MeetingChat.module.css'
 
 export const MeetingDrawingFlow = () => {
@@ -26,14 +30,15 @@ export const MeetingDrawingFlow = () => {
   const scope = useMockStorageScope()
   const location = useLocation()
   const scenario = import.meta.env.DEV ? new URLSearchParams(location.search).get('mock') : null
+  const server = hasMoyangApi && !isMeetingPreview(location.search, meetingId)
   const context = useMemo(
-    () => (scope && meetingId ? { scope, meetingId, scenario } : null),
-    [scope, meetingId, scenario],
+    () => (scope && meetingId ? { scope, meetingId, scenario, server } : null),
+    [scope, meetingId, scenario, server],
   )
   if (!context) return <Navigate to="/meetings" replace state={{ meetingNotice: 'unavailable' }} />
   return (
     <DrawingFlowScreen
-      key={JSON.stringify([scope, meetingId, scenario])}
+      key={JSON.stringify([scope, meetingId, scenario, server])}
       context={context}
       step={step}
     />
@@ -89,24 +94,58 @@ const DrawingFlowScreen = ({ context, step }: { context: ChatStorageContext; ste
     else navigate(chatPath, { replace: true, state: location.state })
   }
 
-  let chat: ReturnType<typeof readMeetingChat> = null
+  const wire = useServerMeetingChat(context.meetingId, context.scope, context.server)
+  let chat: Pick<
+    NonNullable<ReturnType<typeof readMeetingChat>>,
+    'topic' | 'phase' | 'endedAt'
+  > | null = null
+  let alreadyShared = false
   let permitted = false
   let missing = false
   let lookupError = ''
   try {
-    const meeting = getMockMeetingFixture(context.meetingId)
-    missing = !meeting
-    if (meeting) {
-      const room = readWaitingRoom(meeting, context.scope, context.scenario ?? null, now, openedAt)
-      permitted = room.entered && room.phase === 'IN_PROGRESS'
-      if (permitted) chat = readMeetingChat(context)
+    if (context.server) {
+      const serverChat = wire.chat
+      permitted = serverChat?.status === 'IN_PROGRESS' || serverChat?.status === 'ENDED'
+      lookupError = wire.error
+        ? meetingApiMessage(wire.error, '모임 상태를 확인하지 못했어요.')
+        : ''
+      if (serverChat?.phase) {
+        chat = {
+          phase: serverChat.phase,
+          topic: serverChat.topic ?? '오늘의 그림',
+          endedAt: serverChat.endAt ? Date.parse(serverChat.endAt) : null,
+        }
+        alreadyShared = serverChat.messages.some(
+          (message) => message.type === 'DRAWING' && message.mine,
+        )
+      }
+    } else {
+      const meeting = getMockMeetingFixture(context.meetingId)
+      missing = !meeting
+      if (meeting) {
+        const room = readWaitingRoom(
+          meeting,
+          context.scope,
+          context.scenario ?? null,
+          now,
+          openedAt,
+        )
+        permitted = room.entered && room.phase === 'IN_PROGRESS'
+        if (permitted) {
+          const stored = readMeetingChat(context)
+          chat = stored
+          alreadyShared = Boolean(
+            stored?.messages.some(
+              (message) => message.type === 'DRAWING' && message.participantId === 'me',
+            ),
+          )
+        }
+      }
     }
   } catch (cause) {
     lookupError = getMeetingChatError(cause, '모임 정보를 확인하지 못했어요.')
   }
-  const alreadyShared = Boolean(
-    chat?.messages.some((message) => message.type === 'DRAWING' && message.participantId === 'me'),
-  )
   const canDraw = Boolean(
     permitted && chat?.endedAt === null && chat.phase === 'DRAWING' && !alreadyShared,
   )
@@ -312,6 +351,23 @@ const DrawingFlowScreen = ({ context, step }: { context: ChatStorageContext; ste
       if (controller.signal.aborted) return
       if (!current() || navigation.leaving.current || before !== routeKey.current || !next.photo)
         return
+      if (context.server) {
+        const latest = await getServerMeetingChat(context.meetingId, controller.signal)
+        if (
+          latest.status !== 'IN_PROGRESS' ||
+          latest.phase !== 'DRAWING' ||
+          latest.messages.some((message) => message.type === 'DRAWING' && message.mine)
+        )
+          throw new Error('지금은 그림을 공유할 수 없는 단계예요.')
+        if (
+          !controller.signal.aborted &&
+          current() &&
+          !navigation.leaving.current &&
+          before === routeKey.current
+        )
+          goChat()
+        return
+      }
       const drawing = {
         id: next.id,
         title: next.fields.title,
@@ -377,13 +433,17 @@ const DrawingFlowScreen = ({ context, step }: { context: ChatStorageContext; ste
         title="모임 정보를 확인하지 못했어요"
         onClose={goChat}
         actions={[
-          { label: '다시 확인하기', onClick: () => setNow(Date.now()) },
+          {
+            label: '다시 확인하기',
+            onClick: context.server ? wire.refresh : () => setNow(Date.now()),
+          },
           { label: '모임으로 돌아가기', color: 'gray', onClick: goChat },
         ]}
       >
         <p role="alert">{lookupError}</p>
       </Modal>
     )
+  if (context.server && !wire.chat) return <p role="status">모임 상태를 확인하고 있어요.</p>
   if (!permitted)
     return (
       <Navigate
