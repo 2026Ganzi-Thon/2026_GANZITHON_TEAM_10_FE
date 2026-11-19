@@ -76,6 +76,15 @@ function environment() {
     mockStorageLock: 'moyang:mock-storage',
   }))
   const mock = module.exports
+  const previewSource = ts.transpileModule(
+    fs.readFileSync(path.join(__dirname, '../src/features/meeting-chat/chatPreview.ts'), 'utf8'),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+  ).outputText
+  const previewModule = { exports: {} }
+  vm.runInContext(`(function(exports, require) { ${previewSource}\n })`, context)(
+    previewModule.exports,
+    () => mock,
+  )
   const contentSource = ts.transpileModule(
     fs.readFileSync(path.join(__dirname, '../src/features/meeting-chat/chatContent.ts'), 'utf8'),
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
@@ -112,6 +121,7 @@ function environment() {
   const storage = { scope: account, meetingId: '106' }
   return {
     mock,
+    nextPeerMessage: previewModule.exports.getNextMockPeerMessage,
     maskText: contentModule.exports.maskMeetingText,
     timing: timingModule.exports,
     applyHistory: historyModule.exports.applyMeetingChatHistory,
@@ -185,6 +195,69 @@ const advance = (from = 'INTRO', participantId = 'me') => ({
   participantId,
 })
 
+test('a normal room receives one mock participant greeting and one reply without clearing drafts', async () => {
+  const env = environment()
+  await env.start()
+  const greeting = env.nextPeerMessage(null, env.read(), startedAt)
+  assert.equal(greeting.participantId, 'peer-1')
+  assert.equal(greeting.type, 'send')
+  assert.equal(env.nextPeerMessage('chat-messages', env.read(), startedAt), null)
+
+  await env.update({ type: 'draft-text', previousText: '', text: '내 초안' })
+  await Promise.all([env.update(greeting), env.update(greeting)])
+  assert.equal(env.read().draft.text, '내 초안')
+  assert.equal(
+    env.read().messages.filter((message) => message.requestId === greeting.requestId).length,
+    1,
+  )
+  assert.equal(env.nextPeerMessage(null, env.read(), startedAt), null)
+
+  await env.update(send('first', '내 초안'))
+  assert.equal(env.nextPeerMessage(null, env.read(), startedAt + 1499), null)
+  env.time(startedAt + 1500)
+  const reply = env.nextPeerMessage(null, env.read(), startedAt + 1500)
+  assert.equal(reply.participantId, 'peer-1')
+  assert.notEqual(reply.requestId, greeting.requestId)
+  await env.update(reply)
+  assert.equal(env.nextPeerMessage(null, env.read(), startedAt + 1500), null)
+  assert.equal(env.read().messages.filter((message) => message.type === 'TEXT').length, 3)
+})
+
+test('drawing-phase peers reply only after the participant sends a message in that phase', async () => {
+  const env = environment()
+  await env.start()
+  await env.update(send('intro-text', '먼저 인사해요.'))
+  await env.update(advance())
+  env.time(startedAt + 2000)
+  assert.equal(env.nextPeerMessage(null, env.read(), startedAt + 2000), null)
+
+  await env.update(send('drawing-text', '그리다가 궁금한 점이 생겼어요.'))
+  assert.equal(env.nextPeerMessage(null, env.read(), startedAt + 3499), null)
+  env.time(startedAt + 3500)
+  const reply = env.nextPeerMessage(null, env.read(), startedAt + 3500)
+  assert.equal(reply.phase, 'DRAWING')
+  assert.equal(reply.participantId, 'peer-1')
+  await env.update(reply)
+  assert.equal(env.nextPeerMessage(null, env.read(), startedAt + 3500), null)
+})
+
+test('delayed mock messages do not enter a new phase or an ending room', async () => {
+  const env = environment()
+  await env.start()
+  const greeting = env.nextPeerMessage('scheduled-start', env.read(), startedAt)
+  await env.update(advance())
+  await env.update(greeting)
+  assert.equal(env.nextPeerMessage(null, env.read(), startedAt), null)
+  assert.equal(env.read().messages.filter((message) => message.type === 'TEXT').length, 0)
+
+  for (const member of participants) await env.update(share(member.id))
+  const comment = env.nextPeerMessage(null, env.read(), startedAt)
+  assert.equal(comment.phase, 'SHARING')
+  await env.update({ type: 'agree-end', participantId: 'me' })
+  await env.update(comment)
+  assert.equal(env.nextPeerMessage(null, env.read(), startedAt), null)
+  assert.equal(env.read().messages.filter((message) => message.type === 'TEXT').length, 0)
+})
 test('Korean profanity masks matching fragments and preserves ordinary text and line breaks', () => {
   const env = environment()
   assert.equal(

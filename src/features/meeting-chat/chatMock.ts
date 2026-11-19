@@ -52,6 +52,7 @@ export type ChatCommand =
       participantId: string
       content: string
       expectedDraft?: string
+      phase?: ChatPhase
     }
   | { type: 'share'; requestId: string; participantId: string; drawing: SharedDrawing }
   | { type: 'advance'; participantId: string; from: ChatPhase }
@@ -435,6 +436,12 @@ export const updateMeetingChat = async (
       }
     }
     if (command.type === 'agree-end' && chat.endAgreedIds.includes(command.participantId))
+      return chat
+    if (
+      command.type === 'send' &&
+      command.phase &&
+      (chat.phase !== command.phase || chat.endedAt !== null || chat.endAgreedIds.length > 0)
+    )
       return chat
     if (chat.endedAt !== null)
       throw new Error('종료된 모임에서는 대화하거나 그림을 공유할 수 없어요.')

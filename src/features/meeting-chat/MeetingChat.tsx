@@ -33,7 +33,7 @@ import { assertCurrentDrawing, openDrawingDraftChannel, readDrawingDraft } from 
 import { SavedDrawingImage } from './SavedDrawingImage'
 import { maskMeetingText, phaseLabels, phasePrompts } from './chatContent'
 import { useDraftNavigation } from './useDraftNavigation'
-import { getChatReadTime, prepareChatPreview } from './chatPreview'
+import { getChatReadTime, getNextMockPeerMessage, prepareChatPreview } from './chatPreview'
 import { ChatGuide } from './ChatGuide'
 import { ChatMessage } from './ChatMessage'
 import { DrawingModal } from './DrawingModal'
@@ -129,6 +129,7 @@ const ChatScreen = ({
   const initialized = useRef(false)
   const request = useRef<AbortController | null>(null)
   const writes = useRef<Promise<unknown>>(Promise.resolve())
+  const leaveRequest = useRef<symbol | null>(null)
   const failedOnce = useRef(false)
   const sendId = useRef<string | null>(null)
   const messages = useRef<HTMLDivElement>(null)
@@ -247,8 +248,10 @@ const ChatScreen = ({
       setNow(Date.now())
       refresh()
     }, 1000)
-    const online = () => {
-      setOffline(!navigator.onLine)
+    const connectionChanged = () => {
+      const connected = navigator.onLine
+      if (!connected) request.current?.abort()
+      setOffline(!connected)
       refresh()
     }
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -273,8 +276,8 @@ const ChatScreen = ({
       else setAttempt((value) => value + 1)
     }
     window.addEventListener('storage', refresh)
-    window.addEventListener('online', online)
-    window.addEventListener('offline', online)
+    window.addEventListener('online', connectionChanged)
+    window.addEventListener('offline', connectionChanged)
     window.addEventListener('beforeunload', beforeUnload)
     window.addEventListener('pagehide', pageHide)
     window.addEventListener('pageshow', pageShow)
@@ -284,8 +287,8 @@ const ChatScreen = ({
       request.current?.abort()
       clearInterval(timer)
       window.removeEventListener('storage', refresh)
-      window.removeEventListener('online', online)
-      window.removeEventListener('offline', online)
+      window.removeEventListener('online', connectionChanged)
+      window.removeEventListener('offline', connectionChanged)
       window.removeEventListener('beforeunload', beforeUnload)
       window.removeEventListener('pagehide', pageHide)
       window.removeEventListener('pageshow', pageShow)
@@ -408,13 +411,14 @@ const ChatScreen = ({
   }
 
   const run = async (command: ChatCommand) => {
-    if (!current() || request.current || offline) return false
+    if (!current() || request.current || offline || !navigator.onLine) return false
     const controller = new AbortController()
     request.current = controller
     setPending(true)
     setError('')
     try {
       await writes.current
+      controller.signal.throwIfAborted()
       if (writeError.current)
         throw new Error('입력 내용을 저장하지 못했어요. 다시 저장한 뒤 시도해 주세요.')
       if (
@@ -429,7 +433,7 @@ const ChatScreen = ({
         context,
         command,
         async () => {
-          if (!canParticipate()) return false
+          if (!navigator.onLine || !canParticipate()) return false
           if (
             command.type === 'share' &&
             command.participantId === 'me' &&
@@ -437,7 +441,7 @@ const ChatScreen = ({
           ) {
             await assertCurrentDrawing(context, command.drawing)
           }
-          return canParticipate()
+          return navigator.onLine && canParticipate()
         },
         controller.signal,
       )
@@ -452,7 +456,7 @@ const ChatScreen = ({
       }
       return true
     } catch (cause) {
-      if (current() && !controller.signal.aborted)
+      if (current() && navigator.onLine && !controller.signal.aborted)
         setError(getMeetingChatError(cause, '처리하지 못했어요. 다시 시도해 주세요.'))
       return false
     } finally {
@@ -463,9 +467,12 @@ const ChatScreen = ({
     }
   }
 
+  const chatReady = chat !== null
   useEffect(() => {
-    if (offline || loadError || expired || !initialized.current) return
+    if (!chatReady || offline || !navigator.onLine || loadError || expired || !initialized.current)
+      return
     const controller = new AbortController()
+    const canSimulate = () => current() && navigator.onLine && canParticipate()
     const simulate = async () => {
       let next: Chat | null
       try {
@@ -474,6 +481,7 @@ const ChatScreen = ({
         return
       }
       if (!next || next.endedAt !== null) return
+      const initial = next
       if (
         next.phase === 'INTRO' &&
         next.moderatorId !== 'me' &&
@@ -482,7 +490,7 @@ const ChatScreen = ({
         next = await updateMeetingChat(
           context,
           { type: 'advance', participantId: next.moderatorId, from: 'INTRO' },
-          canParticipate,
+          canSimulate,
           controller.signal,
         )
       }
@@ -511,7 +519,7 @@ const ChatScreen = ({
                 imageUrl: meetingSampleImage,
               },
             },
-            canParticipate,
+            canSimulate,
             controller.signal,
           )
         }
@@ -531,7 +539,7 @@ const ChatScreen = ({
         next = await updateMeetingChat(
           context,
           { type: 'advance', participantId: next.moderatorId, from: 'SHARING' },
-          canParticipate,
+          canSimulate,
           controller.signal,
         )
       }
@@ -543,18 +551,20 @@ const ChatScreen = ({
           next = await updateMeetingChat(
             context,
             { type: 'agree-end', participantId: member.id },
-            canParticipate,
+            canSimulate,
             controller.signal,
           )
       }
-      if (current() && !controller.signal.aborted) setChat(next)
+      const peerMessage = getNextMockPeerMessage(context.scenario, next, now)
+      if (peerMessage) await updateMeetingChat(context, peerMessage, canSimulate, controller.signal)
+      if ((peerMessage || next !== initial) && current() && !controller.signal.aborted) refresh()
     }
     void simulate().catch((cause) => {
-      if (current() && !controller.signal.aborted)
+      if (current() && navigator.onLine && !controller.signal.aborted)
         setError(getMeetingChatError(cause, '모임 상태를 갱신하지 못했어요.'))
     })
     return () => controller.abort()
-  }, [now, offline, loadError, expired, context, canParticipate, current])
+  }, [chatReady, now, offline, loadError, expired, context, canParticipate, current, refresh])
 
   if (expired) return <ExpiredChatNotice context={context} onBack={onBack} />
   if (!chat || loadError)
@@ -591,6 +601,10 @@ const ChatScreen = ({
   const ownShared = chat.messages.some(
     (item) => item.type === 'DRAWING' && item.participantId === 'me',
   )
+  const agreedToEnd = chat.endAgreedIds.includes('me')
+  const canShare = !ended && chat.phase === 'DRAWING' && !ownShared
+  const activeModal =
+    (modal === 'end' && (ended || agreedToEnd)) || (modal === 'share' && !canShare) ? null : modal
   const canCompose =
     chat.phase !== 'DRAWING' ||
     drawingDraft.methodSelected ||
@@ -626,6 +640,10 @@ const ChatScreen = ({
       expectedDraft: text,
     })
   }
+  const continueChat = () => {
+    leaveRequest.current = null
+    setModal(null)
+  }
 
   return (
     <div className={styles.shell}>
@@ -649,10 +667,10 @@ const ChatScreen = ({
         </button>
         <button
           type="button"
-          disabled={ended || pending || offline || chat.endAgreedIds.includes('me')}
+          disabled={ended || pending || offline || agreedToEnd}
           onClick={() => setModal('end')}
         >
-          {chat.endAgreedIds.includes('me') ? '종료 동의 완료' : '대화 종료'}
+          {agreedToEnd ? '종료 동의 완료' : '대화 종료'}
         </button>
       </header>
       <h1 className={styles.hidden}>{maskMeetingText(meeting.title)} 모임 채팅</h1>
@@ -843,7 +861,7 @@ const ChatScreen = ({
         </div>
       )}
       <Modal
-        isOpen={Boolean(error) && modal === null && !navigation.leaving.current}
+        isOpen={Boolean(error) && activeModal === null && !navigation.leaving.current}
         title={hasWriteError ? '입력을 저장하지 못했어요' : '요청을 처리하지 못했어요'}
         onClose={() => setError('')}
         actions={
@@ -861,7 +879,7 @@ const ChatScreen = ({
         <p role="alert">{error}</p>
         {textConflict && <p>다시 저장하면 이 화면에서 입력한 메시지 초안을 사용해요.</p>}
       </Modal>
-      {!ended && chat.phase === 'DRAWING' && !ownShared && chat.draft.drawing && (
+      {canShare && chat.draft.drawing && (
         <div className={styles.drawingActions}>
           <Button
             disabled={offline || pending}
@@ -931,7 +949,7 @@ const ChatScreen = ({
           drawingRemaining <= 0 &&
           drawingRemaining + drawingGraceDuration > 0 &&
           dismissedReminder !== drawingStartedAt &&
-          modal === null &&
+          activeModal === null &&
           !error &&
           !navigation.leaving.current
         }
@@ -950,13 +968,17 @@ const ChatScreen = ({
       <Modal
         isOpen={modal === 'leave'}
         title="잠시 모임에서 나갈까요?"
-        onClose={() => setModal(null)}
+        onClose={continueChat}
         actions={[
-          { label: '계속 참여하기', color: 'gray', onClick: () => setModal(null) },
+          { label: '계속 참여하기', color: 'gray', onClick: continueChat },
           {
             label: '목록으로 돌아가기',
             onClick: () => {
+              const id = Symbol()
+              leaveRequest.current = id
               void writes.current.then(() => {
+                if (leaveRequest.current !== id) return
+                leaveRequest.current = null
                 if (current() && !writeError.current) onBack()
               })
             },
@@ -971,7 +993,7 @@ const ChatScreen = ({
         )}
       </Modal>
       <Modal
-        isOpen={modal === 'end'}
+        isOpen={activeModal === 'end'}
         title="대화 종료에 동의할까요?"
         onClose={() => {
           if (!pending) setModal(null)
@@ -985,7 +1007,7 @@ const ChatScreen = ({
           },
           {
             label: '종료에 동의하기',
-            disabled: pending,
+            disabled: offline || pending,
             onClick: () => {
               void run({ type: 'agree-end', participantId: 'me' }).then((ok) => {
                 if (ok) setModal(null)
@@ -995,10 +1017,13 @@ const ChatScreen = ({
         ]}
       >
         <p>참여자 전원이 동의하면 모임이 종료돼요. 동의 후 취소는 할 수 없어요.</p>
+        {activeModal === 'end' && offline && (
+          <p role="status">연결이 끊겼어요. 다시 연결되면 종료에 동의할 수 있어요.</p>
+        )}
         {error && <p role="alert">{error}</p>}
       </Modal>
       <Modal
-        isOpen={modal === 'share'}
+        isOpen={activeModal === 'share'}
         title="이 그림을 모임에 공유할까요?"
         onClose={() => {
           if (!pending) setModal(null)
@@ -1007,7 +1032,7 @@ const ChatScreen = ({
           { label: '돌아가기', color: 'gray', disabled: pending, onClick: () => setModal(null) },
           {
             label: '그림 공유하기',
-            disabled: offline || pending || !shareDrawing || ended || ownShared,
+            disabled: offline || pending || !shareDrawing,
             onClick: () => {
               if (shareDrawing)
                 void run({
@@ -1022,12 +1047,15 @@ const ChatScreen = ({
           },
         ]}
       >
-        {modal === 'share' && shareDrawing && (
+        {activeModal === 'share' && shareDrawing && (
           <div className={styles.picture}>
             <SavedDrawingImage context={context} drawing={shareDrawing} retryable />
             <strong>{maskMeetingText(shareDrawing.title)}</strong>
             <p>{maskMeetingText(shareDrawing.description)}</p>
           </div>
+        )}
+        {activeModal === 'share' && offline && (
+          <p role="status">연결이 끊겼어요. 다시 연결되면 그림을 공유할 수 있어요.</p>
         )}
         {error && <p role="alert">{error}</p>}
       </Modal>
