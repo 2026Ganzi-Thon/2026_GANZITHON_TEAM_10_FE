@@ -81,7 +81,8 @@ const useHomeData = (preview: boolean) => {
     void get('/api/meetings/me', setMeetings, (data) => {
       const items = (data as { meetings: Meeting[] }).meetings
       if (!Array.isArray(items)) throw new Error('Invalid response')
-      const dates = items.filter((item) => item.startAt && !Number.isNaN(Date.parse(item.startAt)))
+      const now = Date.now()
+      const dates = items.filter((item) => item.startAt && Date.parse(item.startAt) > now)
       dates.sort((a, b) => Date.parse(a.startAt!) - Date.parse(b.startAt!))
       return {
         meetings: items,
