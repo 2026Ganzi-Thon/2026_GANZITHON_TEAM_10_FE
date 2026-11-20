@@ -187,6 +187,15 @@ export const openDrawingConversation = async (
 export const loadWoolBalance = async (signal?: AbortSignal) =>
   (await moyangRequest(signal).json<{ balance: number }>('/api/sheep')).balance
 
+export const canExtendServerConversation = async (
+  id: string,
+  messageCount: number,
+  signal: AbortSignal,
+) => {
+  const detail = await moyangRequest(signal).json<Detail>(path(id))
+  return detail.canExtend && detail.messages.length === messageCount
+}
+
 export const startServerConversation = async (
   drawingId: number,
   conversationId: number | null | undefined,

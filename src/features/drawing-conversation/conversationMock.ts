@@ -142,10 +142,12 @@ export const updateConversation = async (
 
   const reply: Message = { role: 'user', text: getReplyText(action) }
   if (showSupport && action.type === 'ANSWER' && !messages.some(({ role }) => role === 'support')) {
+    const remainingFreeQuestions = Math.max(0, questions.length - questionIndex - 1)
     return {
       ...conversation,
       messages: [...messages, reply],
-      remainingFreeQuestions: Math.max(0, questions.length - questionIndex - 1),
+      remainingFreeQuestions,
+      canExtend: remainingFreeQuestions === 0,
       status: 'support',
     }
   }

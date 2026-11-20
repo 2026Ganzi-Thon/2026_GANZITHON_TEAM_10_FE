@@ -12,6 +12,7 @@ import { faClipboard, faCommentDots } from '@fortawesome/free-regular-svg-icons'
 import { Button, Modal } from '@/components'
 import { MoyangApiError } from '@/lib/moyang-api'
 import {
+  canExtendServerConversation,
   loadWoolBalance,
   rememberServerSupportNotice,
   restoreServerSupportNotice,
@@ -110,7 +111,15 @@ export const DrawingConversation = ({
   const restoreReplyFocus = useRef(false)
   const isAsking = conversation?.status === 'asking'
   const isShowingSupport = conversation?.status === 'support'
+  const isReviewing = conversation?.status === 'review'
   const canAnswer = isAsking || (isShowingSupport && (conversation.remainingFreeQuestions ?? 0) > 0)
+  const supportAtLimit = isShowingSupport && conversation.remainingFreeQuestions === 0
+  const canExtend =
+    (isReviewing && conversation.canExtend !== false) ||
+    (supportAtLimit && conversation.canExtend === true)
+  const supportExtensionId =
+    server && supportAtLimit && !conversation.canExtend ? conversation.id : undefined
+  const messageCount = conversation?.messages.length ?? 0
   const isPending = pending !== null
   const mustRetryServerAction = server && retry !== null
   const closeConfirmation = () => setConfirmation(null)
@@ -160,6 +169,26 @@ export const DrawingConversation = ({
   ])
 
   useEffect(() => () => request.current?.abort(), [])
+
+  useEffect(() => {
+    if (!supportExtensionId) return
+    const controller = new AbortController()
+    const { signal } = controller
+    canExtendServerConversation(supportExtensionId, messageCount, signal).then(
+      (available) => {
+        if (signal.aborted || !available) return
+        setConversation((current) =>
+          current?.id === supportExtensionId &&
+          current.status === 'support' &&
+          current.messages.length === messageCount
+            ? { ...current, canExtend: true }
+            : current,
+        )
+      },
+      () => {},
+    )
+    return () => controller.abort()
+  }, [messageCount, supportExtensionId])
 
   useEffect(() => {
     if (server) {
@@ -434,7 +463,7 @@ export const DrawingConversation = ({
               </div>
             )}
 
-            {(isShowingSupport || conversation.status === 'review') && (
+            {(isShowingSupport || isReviewing) && (
               <div className={styles.review}>
                 <Button
                   color="gray"
@@ -445,7 +474,7 @@ export const DrawingConversation = ({
                   내 그림 정리하기
                   <FontAwesomeIcon icon={faChevronRight} />
                 </Button>
-                {conversation.status === 'review' && conversation.canExtend !== false && (
+                {canExtend && (
                   <Button
                     color="gray"
                     disabled={isPending || mustRetryServerAction}
@@ -459,7 +488,7 @@ export const DrawingConversation = ({
                     <FontAwesomeIcon icon={faChevronRight} />
                   </Button>
                 )}
-                {conversation.status === 'review' && (
+                {(isReviewing || canExtend) && (
                   <p className={styles.woolBalance} aria-live="polite">
                     {woolBalance === null
                       ? '보유 양털을 확인할 수 없어요.'
