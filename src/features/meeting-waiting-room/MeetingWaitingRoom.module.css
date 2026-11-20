@@ -318,6 +318,21 @@
   text-align: left;
 }
 
+.joinNickname {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.joinNickname .nicknameInput {
+  width: 100%;
+}
+
+.joinNickname .nicknameHint {
+  margin: 0;
+}
+
 .chat {
   display: flex;
   min-height: 100%;

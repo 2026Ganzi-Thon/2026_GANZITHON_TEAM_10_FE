@@ -37,6 +37,20 @@
   padding: 24px 30px 30px;
 }
 
+.serverBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  padding: 24px clamp(20px, 6vw, 30px) 30px;
+  overflow-wrap: anywhere;
+}
+
+.serverBody > p,
+.serverBody > .tags,
+.serverBody > .section {
+  margin: 0;
+}
+
 .title {
   margin: 0;
   font-size: var(--font-size-question);
@@ -202,6 +216,15 @@
 .footer {
   margin-top: auto;
   text-align: center;
+}
+
+.serverBody .footer {
+  display: grid;
+  gap: 8px;
+}
+
+.serverBody .footer > p {
+  margin: 0;
 }
 
 .footer button,

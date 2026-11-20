@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Modal, PageHeader } from '@/components'
 import { formatRemainingTime } from '@/features/meeting-chat/chatTiming'
@@ -39,6 +39,7 @@ export const ServerMeetingRoom = ({
 }) => {
   const location = useLocation()
   const navigate = useNavigate()
+  const nicknameId = useId()
   const listPath = getMeetingListPath(location.state?.meetingListSearch)
   const cancellationKey = JSON.stringify(['moyang:meeting-cancelled', scope, id])
   const [meeting, setMeeting] = useState<MeetingDetail>()
@@ -237,7 +238,7 @@ export const ServerMeetingRoom = ({
         action="back"
         onNavigate={() => returnToList()}
       />
-      <div className={inWaiting ? room.room : detail.body}>
+      <div className={inWaiting ? room.room : detail.serverBody}>
         {!meeting ? (
           <div className={detail.loadState}>
             <p role={loadFailed ? 'alert' : 'status'}>
@@ -322,16 +323,20 @@ export const ServerMeetingRoom = ({
               )}
               {open && !joined && !done && !applicationCancelled && (
                 <>
-                  <label className={room.nicknameField}>
-                    모임에서 사용할 닉네임
+                  <div className={room.joinNickname}>
+                    <label htmlFor={nicknameId}>모임에서 사용할 닉네임</label>
                     <input
                       className={room.nicknameInput}
+                      id={nicknameId}
+                      aria-describedby={`${nicknameId}-hint`}
                       value={nickname}
                       maxLength={15}
                       onChange={(event) => setNickname(event.target.value)}
-                      placeholder="비워 두면 내 양 닉네임을 사용해요"
                     />
-                  </label>
+                    <p className={room.nicknameHint} id={`${nicknameId}-hint`}>
+                      비워 두면 내 양 닉네임을 사용해요.
+                    </p>
+                  </div>
                   <Button
                     disabled={
                       Boolean(action) ||
