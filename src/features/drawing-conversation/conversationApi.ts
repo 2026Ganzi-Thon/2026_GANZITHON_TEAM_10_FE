@@ -24,6 +24,7 @@ type Detail = {
     type: 'QUESTION' | 'ANSWER' | 'DONT_KNOW' | 'SKIP'
     order: number
   }[]
+  remainingFreeQuestions: number
   canExtend: boolean
   drawing: Drawing
   card: DrawingResultData['card'] | null
@@ -35,6 +36,7 @@ type Start = {
 }
 type Reply = {
   question: Question | null
+  remainingFreeQuestions: number
   canExtend: boolean
   supportNotice: Notice | null
 }
@@ -87,7 +89,9 @@ export const rememberServerSupportNotice = (scope: string, conversation: Convers
 export const restoreServerSupportNotice = (scope: string, conversation: Conversation) => {
   if (
     !conversation.id ||
-    (conversation.status !== 'review' &&
+    conversation.supportNotice ||
+    (conversation.status !== 'support' &&
+      conversation.status !== 'review' &&
       (conversation.status !== 'asking' || conversation.messages.length !== 0))
   )
     return conversation
@@ -122,6 +126,15 @@ export const restoreServerSupportNotice = (scope: string, conversation: Conversa
 const toConversation = (detail: Detail): Conversation => {
   const last = detail.messages.at(-1)
   const question = detail.messages.findLast(({ role }) => role === 'AI')
+  // 무료 질문이 남았는데 답변 이후 질문이 없는 것은 서버가 지원 안내에서 대화를 멈춘 상태다.
+  const status =
+    detail.status === 'ENDED'
+      ? 'ended'
+      : last?.role !== 'USER'
+        ? 'asking'
+        : detail.remainingFreeQuestions > 0
+          ? 'support'
+          : 'review'
   return {
     id: String(detail.conversationId),
     messages: detail.messages.map(({ role, content, type }) => ({
@@ -129,7 +142,8 @@ const toConversation = (detail: Detail): Conversation => {
       text: type === 'DONT_KNOW' || type === 'SKIP' ? getReplyText({ type }) : (content ?? ''),
     })),
     questionIndex: Math.max(0, (question?.order ?? 1) - 1),
-    status: detail.status === 'ENDED' ? 'ended' : last?.role === 'USER' ? 'review' : 'asking',
+    remainingFreeQuestions: detail.remainingFreeQuestions,
+    status,
     canExtend: detail.canExtend,
   }
 }
@@ -172,6 +186,15 @@ export const openDrawingConversation = async (
 
 export const loadWoolBalance = async (signal?: AbortSignal) =>
   (await moyangRequest(signal).json<{ balance: number }>('/api/sheep')).balance
+
+export const canExtendServerConversation = async (
+  id: string,
+  messageCount: number,
+  signal: AbortSignal,
+) => {
+  const detail = await moyangRequest(signal).json<Detail>(path(id))
+  return detail.canExtend && detail.messages.length === messageCount
+}
 
 export const startServerConversation = async (
   drawingId: number,
@@ -259,6 +282,7 @@ export const updateServerConversation = async (
     ...current,
     messages,
     questionIndex: reply.question ? Math.max(0, reply.question.order - 1) : current.questionIndex,
+    remainingFreeQuestions: reply.remainingFreeQuestions,
     canExtend: reply.canExtend,
     status: reply.supportNotice ? 'support' : reply.question ? 'asking' : 'review',
     supportNotice: reply.supportNotice ?? undefined,

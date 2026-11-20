@@ -11,6 +11,14 @@
   font-weight: 600;
 }
 
+.actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
 .navigation {
   display: grid;
   place-items: center;
