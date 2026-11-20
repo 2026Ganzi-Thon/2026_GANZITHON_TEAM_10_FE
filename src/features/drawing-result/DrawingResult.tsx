@@ -328,7 +328,16 @@ export const DrawingResult = ({
         if (programUrl && programActivity) {
           navigate(serverId ? '/sessions' : programUrl, {
             replace: true,
-            state: { completedRound: programActivity.round, storageScope },
+            state: {
+              completedRound: programActivity.round,
+              storageScope,
+              ...(serverId && {
+                savedActivity: {
+                  recordId: result.recordId,
+                  themeCode: programActivity.concern.id,
+                },
+              }),
+            },
           })
           return
         }

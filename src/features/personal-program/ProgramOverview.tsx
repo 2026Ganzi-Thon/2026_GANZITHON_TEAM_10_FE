@@ -55,6 +55,7 @@ export const ProgramSchedule = ({ days, date }: { days: number[]; date: string }
 )
 
 export const ProgramTimeline = ({
+  completedTopics,
   completed,
   activity,
   availableRounds = rounds.length,
@@ -64,6 +65,7 @@ export const ProgramTimeline = ({
   showFirstTopic = true,
   firstTopic,
 }: {
+  completedTopics?: readonly (string | null)[]
   completed: number
   activity: ProgramActivity | null
   availableRounds?: number
@@ -83,6 +85,7 @@ export const ProgramTimeline = ({
     <ol className={isSetup ? styles.setupTimeline : styles.timeline}>
       {getProgramRounds(concernId ?? firstReflection?.concern.id).map((round, index) => {
         const isComplete = index < completed
+        const completedTopic = isComplete ? completedTopics?.[index] : null
         const isNext = index === completed && index < availableRounds
         const isToday = activity?.round === index + 1
         const savedReflection = isSetup && index === 0 ? firstReflection : undefined
@@ -110,6 +113,11 @@ export const ProgramTimeline = ({
                   {(showFirstTopic || isToday) && (
                     <p>{savedReflection?.story ?? round.description}</p>
                   )}
+                </div>
+              )}
+              {completedTopic && (
+                <div className={styles.topic}>
+                  <strong>{completedTopic}</strong>
                 </div>
               )}
             </div>
