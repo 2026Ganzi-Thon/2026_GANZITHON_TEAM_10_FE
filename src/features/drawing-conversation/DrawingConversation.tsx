@@ -10,6 +10,14 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { faClipboard, faCommentDots } from '@fortawesome/free-regular-svg-icons'
 import { Button, Modal } from '@/components'
+import { MoyangApiError } from '@/lib/moyang-api'
+import {
+  loadWoolBalance,
+  rememberServerSupportNotice,
+  restoreServerSupportNotice,
+  startServerConversation,
+  updateServerConversation,
+} from './conversationApi'
 import { useModal } from '@/hooks/useModal'
 import { getWoolBalance, readReflections, spendWoolForQuestion } from '@/lib/mock-reflections'
 import type { RecordId } from '@/lib/mock-reflections'
@@ -31,6 +39,8 @@ import styles from './DrawingConversation.module.css'
 
 type DrawingConversationProps = {
   drawing: ConversationDrawing
+  server?: boolean
+  serverConversationId?: number | null
   recordId: RecordId
   storageKey: string
   legacyStorageKey?: string
@@ -58,6 +68,8 @@ const isDialogBackdrop = ({ target, clientX, clientY }: MouseEvent<HTMLDivElemen
 
 export const DrawingConversation = ({
   drawing,
+  server = false,
+  serverConversationId,
   recordId,
   storageKey,
   legacyStorageKey,
@@ -70,6 +82,7 @@ export const DrawingConversation = ({
   const isProgramPreview = Boolean(programActivity?.mock)
   const previewWallet = scenario === 'wool'
   const [conversation, setConversation] = useState(() => {
+    if (server) return null
     const saved =
       readConversation(storageKey) ?? (legacyStorageKey ? readConversation(legacyStorageKey) : null)
     return isPreview && saved?.status === 'ended' ? null : saved
@@ -82,8 +95,9 @@ export const DrawingConversation = ({
   const { isOpen: isDrawingOpen, openModal: openDrawing, closeModal: closeDrawing } = useModal()
   const [pending, setPending] = useState<ConversationAction | null>(null)
   const [retry, setRetry] = useState<ConversationAction | null>(null)
+  const [busyError, setBusyError] = useState(false)
   const [woolBalance, setWoolBalance] = useState(() =>
-    readWoolBalance(isProgramPreview, previewWallet),
+    server ? null : readWoolBalance(isProgramPreview, previewWallet),
   )
   const [woolShortage, setWoolShortage] = useState(false)
   const request = useRef<AbortController | null>(null)
@@ -96,6 +110,7 @@ export const DrawingConversation = ({
   const restoreReplyFocus = useRef(false)
   const isAsking = conversation?.status === 'asking'
   const isPending = pending !== null
+  const mustRetryServerAction = server && retry !== null
   const closeConfirmation = () => setConfirmation(null)
 
   useEffect(() => {
@@ -114,30 +129,51 @@ export const DrawingConversation = ({
   useEffect(() => {
     if (conversation || scenario === 'loading') return
 
-    let active = true
-    startConversation(scenario === 'start-error' && startAttempt === 0).then(
+    const controller = new AbortController()
+    const opening = server
+      ? startServerConversation(drawing.drawingId, serverConversationId, controller.signal)
+      : startConversation(scenario === 'start-error' && startAttempt === 0)
+    opening.then(
       (started) => {
-        if (!active || storageScope !== getMockStorageScope()) return
-        saveConversation(storageKey, started)
-        setConversation(started)
+        if (controller.signal.aborted || storageScope !== getMockStorageScope()) return
+        if (!server) saveConversation(storageKey, started)
+        else if (started.status === 'support') rememberServerSupportNotice(storageScope, started)
+        setConversation(server ? restoreServerSupportNotice(storageScope, started) : started)
       },
       () => {
-        if (active) setStartFailed(true)
+        if (!controller.signal.aborted) setStartFailed(true)
       },
     )
 
-    return () => {
-      active = false
-    }
-  }, [conversation, scenario, startAttempt, storageKey, storageScope])
+    return () => controller.abort()
+  }, [
+    conversation,
+    drawing.drawingId,
+    scenario,
+    server,
+    serverConversationId,
+    startAttempt,
+    storageKey,
+    storageScope,
+  ])
 
   useEffect(() => () => request.current?.abort(), [])
 
   useEffect(() => {
+    if (server) {
+      const controller = new AbortController()
+      loadWoolBalance(controller.signal).then(
+        (balance) => {
+          if (!controller.signal.aborted) setWoolBalance(balance)
+        },
+        () => {},
+      )
+      return () => controller.abort()
+    }
     const syncBalance = () => setWoolBalance(readWoolBalance(isProgramPreview, previewWallet))
     window.addEventListener('storage', syncBalance)
     return () => window.removeEventListener('storage', syncBalance)
-  }, [isProgramPreview, previewWallet])
+  }, [isProgramPreview, previewWallet, server])
 
   useLayoutEffect(() => {
     const list = messageList.current
@@ -166,12 +202,14 @@ export const DrawingConversation = ({
 
   const runAction = async (action: ConversationAction) => {
     if (!conversation || request.current || storageScope !== getMockStorageScope()) return
+    if (mustRetryServerAction && action !== retry) return
 
     const controller = new AbortController()
     const { signal } = controller
     request.current = controller
     setPending(action)
     setRetry(null)
+    setBusyError(false)
     setWoolShortage(false)
     setShowReplies(false)
 
@@ -179,10 +217,19 @@ export const DrawingConversation = ({
     const fail = !mockFailed.current && scenario === (isEnd ? 'end-error' : 'reply-error')
 
     try {
-      const updated = await updateConversation(conversation, action, fail, scenario === 'support')
+      const updated = server
+        ? await updateServerConversation(conversation, action, signal, mustRetryServerAction)
+        : await updateConversation(conversation, action, fail, scenario === 'support')
       if (signal.aborted || storageScope !== getMockStorageScope()) return
 
-      if (action.type === 'CONTINUE') {
+      if (server && action.type === 'CONTINUE') {
+        loadWoolBalance(signal).then(
+          (balance) => {
+            if (!signal.aborted && storageScope === getMockStorageScope()) setWoolBalance(balance)
+          },
+          () => {},
+        )
+      } else if (action.type === 'CONTINUE') {
         const questionId = `${conversation.id ?? drawing.drawingId}:${updated.questionIndex}`
         const paid =
           !isProgramPreview && (await spendWoolForQuestion(questionId, signal, previewWallet))
@@ -194,11 +241,26 @@ export const DrawingConversation = ({
         }
       }
 
-      saveConversation(storageKey, isPreview && isEnd ? null : updated)
-      setConversation(updated)
-      if (getReplyText(action)) setInput('')
-    } catch {
-      if (signal.aborted) return
+      if (server) {
+        const restored = restoreServerSupportNotice(storageScope, updated)
+        rememberServerSupportNotice(storageScope, restored)
+        setConversation(restored)
+      } else {
+        saveConversation(storageKey, isPreview && isEnd ? null : updated)
+        setConversation(updated)
+      }
+      const replyText = getReplyText(action)
+      const nextUserMessage = updated.messages
+        .slice(conversation.messages.length)
+        .find(({ role }) => role === 'user')
+      if (replyText && (!server || nextUserMessage?.text === replyText)) setInput('')
+    } catch (error) {
+      if (signal.aborted || storageScope !== getMockStorageScope()) return
+      if (server && error instanceof MoyangApiError && error.code === 'NOT_ENOUGH_WOOL') {
+        setWoolShortage(true)
+        return
+      }
+      setBusyError(server && error instanceof MoyangApiError && error.code === 'CONCURRENT_REQUEST')
       mockFailed.current = true
       setRetry(action)
     } finally {
@@ -213,13 +275,20 @@ export const DrawingConversation = ({
     return (
       <Navigate
         replace
-        to={previewWallet ? '/drawing/result?mock=wool-session' : '/drawing/result'}
+        to={
+          server
+            ? `/drawing/result?conversationId=${conversation.id}`
+            : previewWallet
+              ? '/drawing/result?mock=wool-session'
+              : '/drawing/result'
+        }
         state={{
           drawing,
           conversation,
           programActivity,
           storageScope,
-          conversationStorageKey: storageKey,
+          conversationStorageKey: server ? undefined : storageKey,
+          serverConversationId: server ? Number(conversation.id) : undefined,
           recordId,
         }}
       />
@@ -259,7 +328,7 @@ export const DrawingConversation = ({
           <button
             className={styles.end}
             type="button"
-            disabled={isPending}
+            disabled={isPending || mustRetryServerAction}
             aria-haspopup="dialog"
             onClick={() => setConfirmation('end')}
           >
@@ -335,7 +404,15 @@ export const DrawingConversation = ({
 
           <ConversationMessages messages={conversation.messages} ref={messageList}>
             {conversation.status === 'support' && (
-              <ConversationBubble role="support" text={supportMessage} />
+              <ConversationBubble
+                role="support"
+                text={conversation.supportNotice?.message ?? supportMessage}
+              />
+            )}
+            {conversation.supportNotice && /^\+?[\d-]+$/.test(conversation.supportNotice.phone) && (
+              <a className={styles.feedback} href={`tel:${conversation.supportNotice.phone}`}>
+                {conversation.supportNotice.actionLabel}
+              </a>
             )}
             {pendingReply && <ConversationBubble role="user" text={pendingReply} />}
             {pending && (
@@ -348,7 +425,11 @@ export const DrawingConversation = ({
             {retry && (
               <div className={styles.feedback}>
                 <p role="alert">
-                  {retry.type === 'END' ? '대화를 마치지 못했어요.' : '응답을 불러오지 못했어요.'}
+                  {busyError
+                    ? '이전 요청을 처리 중이에요. 잠시 후 다시 시도해 주세요.'
+                    : retry.type === 'END'
+                      ? '대화를 마치지 못했어요.'
+                      : '응답을 불러오지 못했어요.'}
                 </p>
                 <button type="button" onClick={() => void runAction(retry)}>
                   다시 시도
@@ -360,25 +441,27 @@ export const DrawingConversation = ({
               <div className={styles.review}>
                 <Button
                   color="gray"
-                  disabled={isPending}
+                  disabled={isPending || mustRetryServerAction}
                   onClick={() => void runAction({ type: 'END' })}
                 >
                   <FontAwesomeIcon icon={faClipboard} />
                   내 그림 정리하기
                   <FontAwesomeIcon icon={faChevronRight} />
                 </Button>
-                <Button
-                  color="gray"
-                  disabled={isPending}
-                  onClick={() => void runAction({ type: 'CONTINUE' })}
-                >
-                  <FontAwesomeIcon icon={faCommentDots} />
-                  <span>
-                    조금 더 이야기하고 싶어요
-                    <small>양털 1개가 소모돼요.</small>
-                  </span>
-                  <FontAwesomeIcon icon={faChevronRight} />
-                </Button>
+                {conversation.canExtend !== false && (
+                  <Button
+                    color="gray"
+                    disabled={isPending || mustRetryServerAction}
+                    onClick={() => void runAction({ type: 'CONTINUE' })}
+                  >
+                    <FontAwesomeIcon icon={faCommentDots} />
+                    <span>
+                      조금 더 이야기하고 싶어요
+                      <small>양털 1개가 소모돼요.</small>
+                    </span>
+                    <FontAwesomeIcon icon={faChevronRight} />
+                  </Button>
+                )}
                 <p className={styles.woolBalance} aria-live="polite">
                   {woolBalance === null
                     ? '보유 양털을 확인할 수 없어요.'
@@ -414,7 +497,7 @@ export const DrawingConversation = ({
                   type="button"
                   className={styles.replyToggle}
                   ref={replyToggle}
-                  disabled={isPending}
+                  disabled={isPending || mustRetryServerAction}
                   onClick={() => setShowReplies(true)}
                 >
                   답하기 어려워요
@@ -449,9 +532,10 @@ export const DrawingConversation = ({
               >
                 <input
                   aria-label="답변 입력"
+                  maxLength={server ? 1000 : undefined}
                   placeholder="그림에 담긴 이야기를 적어 주세요"
                   value={input}
-                  readOnly={isPending}
+                  readOnly={isPending || mustRetryServerAction}
                   disabled={!isAsking}
                   onFocus={() => setShowReplies(false)}
                   onKeyDown={(event) => {
@@ -468,7 +552,7 @@ export const DrawingConversation = ({
                   type="submit"
                   className={styles.send}
                   aria-label="전송"
-                  disabled={!input.trim() || isPending || !isAsking}
+                  disabled={!input.trim() || isPending || mustRetryServerAction || !isAsking}
                 >
                   <FontAwesomeIcon icon={faArrowUp} />
                 </button>

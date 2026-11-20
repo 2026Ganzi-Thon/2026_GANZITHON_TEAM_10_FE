@@ -32,6 +32,7 @@ export type DrawingResultSource = {
   conversation: Conversation
   recordId?: RecordId
   programActivity?: ProgramActivityHandoff
+  serverConversationId?: number
   conversationStorageKey?: string
 }
 

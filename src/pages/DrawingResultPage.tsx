@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { DrawingResult } from '@/features/drawing-result/DrawingResult'
 import { exampleResultSource } from '@/features/drawing-result/resultMock'
 import type { DrawingResultSource } from '@/features/drawing-result/resultMock'
+import { hasMoyangApi } from '@/lib/moyang-api'
 import { useMockStorageScope } from '@/hooks/useMockStorageScope'
 
 type ResultLocationState = DrawingResultSource & { resultKey?: string; storageScope?: string }
@@ -26,14 +27,30 @@ export const DrawingResultPage = () => {
       ? state
       : null
   const scenario = import.meta.env.DEV ? new URLSearchParams(location.search).get('mock') : null
-  const resultKey = state?.resultKey ?? location.key
-  const source = state?.drawing
-    ? finishedResult && !isDiscarded(resultKey)
-      ? finishedResult
-      : null
-    : import.meta.env.DEV && storageScope && scenario !== 'missing-result'
-      ? exampleResultSource
-      : null
+  const serverId = Number(new URLSearchParams(location.search).get('conversationId'))
+  const serverResult =
+    hasMoyangApi && !!storageScope && Number.isSafeInteger(serverId) && serverId > 0
+  const resultKey = state?.resultKey ?? (serverResult ? `conversation:${serverId}` : location.key)
+  const source = serverResult
+    ? state?.storageScope && state.storageScope !== storageScope
+      ? null
+      : {
+          drawing: finishedResult?.drawing ?? { drawingId: 0, title: '오늘의 그림' },
+          conversation: finishedResult?.conversation ?? {
+            status: 'ended' as const,
+            messages: [],
+            questionIndex: 0,
+          },
+          programActivity: finishedResult?.programActivity,
+          serverConversationId: serverId,
+        }
+    : state?.drawing
+      ? finishedResult && !isDiscarded(resultKey)
+        ? finishedResult
+        : null
+      : import.meta.env.DEV && storageScope && scenario !== 'missing-result'
+        ? exampleResultSource
+        : null
 
   const showConversation = location.hash === '#conversation'
 

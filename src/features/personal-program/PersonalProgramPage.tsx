@@ -6,6 +6,8 @@ import { Button, HomeLayout, Modal, SheepProfile } from '@/components'
 import { exampleDrawing } from '@/features/drawing-conversation/conversationMock'
 import { useModal } from '@/hooks/useModal'
 import { useMockStorageScope } from '@/hooks/useMockStorageScope'
+import { hasMoyangApi } from '@/lib/moyang-api'
+import { ServerPersonalProgram } from './ServerPersonalProgram'
 import { getMockStorageScope } from '@/lib/mock-storage'
 import {
   PersonalProgramHomeSection,
@@ -41,6 +43,24 @@ type SessionLocation = {
 }
 
 export const PersonalProgramPage = () => {
+  const location = useLocation()
+  const storageScope = useMockStorageScope()
+  const params = new URLSearchParams(location.search)
+  const preview =
+    import.meta.env.DEV &&
+    (params.has('mock') || params.has('preview') || params.get('view') === 'home')
+  if (!hasMoyangApi || preview) return <MockPersonalProgramPage />
+  const handoff = location.state as SessionLocation | null
+  return (
+    <ServerPersonalProgram
+      key={storageScope}
+      scope={storageScope}
+      reflection={handoff?.storageScope === storageScope ? handoff?.firstReflection : undefined}
+    />
+  )
+}
+
+const MockPersonalProgramPage = () => {
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()

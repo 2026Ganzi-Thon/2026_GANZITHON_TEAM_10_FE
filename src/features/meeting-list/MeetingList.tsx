@@ -1,3 +1,6 @@
+import { hasMoyangApi } from '@/lib/moyang-api'
+import { loadServerMeetings } from './meetingApi'
+import { isServerPastMeetingStorageKey } from './serverMeetingHistory'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import {
@@ -30,7 +33,12 @@ import {
   meetingConcerns,
   pastConversationDuration,
 } from './meetingMock'
-import { getMeetingEntry, getMeetingPath, meetingNotices } from './meetingEntry'
+import {
+  getMeetingEntry,
+  getMeetingRoomPath,
+  isMeetingPreview,
+  meetingNotices,
+} from './meetingEntry'
 import type { MeetingNotice } from './meetingEntry'
 import type {
   LiveMeeting,
@@ -113,7 +121,7 @@ const ReentryLink = ({ meeting, label }: { meeting: Meeting; label: string }) =>
   const { key, search } = useLocation()
   return (
     <Link
-      to={getMeetingPath(meeting)}
+      to={getMeetingRoomPath(meeting)}
       state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
       aria-label={`${meeting.title} ${label}`}
       data-meeting-id={meeting.id}
@@ -170,7 +178,7 @@ const ScheduledMeetingCard = ({
       {canReenter && <ReentryLink meeting={meeting} label={entry.label} />}
       {entry.canEnter && !canReenter && (
         <Link
-          to={getMeetingPath(meeting)}
+          to={getMeetingRoomPath(meeting)}
           state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
           aria-label={`${meeting.title} 상세 보기`}
           data-meeting-id={meeting.id}
@@ -209,7 +217,7 @@ const LiveMeetingCard = ({ meeting, onNotice }: { meeting: LiveMeeting; onNotice
         </div>
         {entry.canEnter === true && !canReenter && (
           <Link
-            to={getMeetingPath(meeting)}
+            to={getMeetingRoomPath(meeting)}
             state={{ fromMeetingList: true, meetingListSearch: search, meetingListKey: key }}
             aria-label={`${meeting.title} ${entry.label}`}
             data-meeting-id={meeting.id}
@@ -344,7 +352,7 @@ const PastMeetingsSection = ({
   const navigate = useNavigate()
   const openHistory = (meeting: PastMeeting, drawing: boolean) =>
     navigate(
-      `/meetings/${encodeURIComponent(meeting.id)}/history${drawing ? '?view=drawing' : ''}`,
+      `/meetings/${encodeURIComponent(meeting.id)}/${meeting.server ? 'chat' : 'history'}${drawing ? '?view=drawing' : ''}`,
       {
         state: { fromMeetingList: true, meetingListSearch: search, meetingListKey: key },
       },
@@ -352,7 +360,7 @@ const PastMeetingsSection = ({
 
   useEffect(() => {
     const nextExpiry = meetings
-      .map(({ endAt }) => endAt + pastConversationDuration)
+      .map(({ deleteAt, endAt }) => deleteAt ?? endAt + pastConversationDuration)
       .filter((expiry) => expiry > now)
       .sort((a, b) => a - b)[0]
     if (!nextExpiry) return
@@ -383,6 +391,7 @@ const PastMeetingsSection = ({
       </div>
       {visible.length > 0 && (
         <p className={styles.pastDescription}>
+          {meetings.some(({ server }) => server) && '이 브라우저에서 참여한 모임을 보여드려요. '}
           모임 종료 후 24시간 이내에 대화를 열람할 수 있어요.
         </p>
       )}
@@ -409,7 +418,7 @@ const PastMeetingsSection = ({
                   >
                     <span>내가 그린 그림 확인하기</span>
                   </button>
-                  {now < meeting.endAt + pastConversationDuration && (
+                  {now < (meeting.deleteAt ?? meeting.endAt + pastConversationDuration) && (
                     <button
                       type="button"
                       data-meeting-id={meeting.id}
@@ -449,13 +458,15 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
   const tab = searchParams.get('tab') === 'mine' ? 'mine' : 'find'
   const concern = meetingConcerns.find(({ id }) => id === searchParams.get('concern'))?.id
   const scenario = import.meta.env.DEV ? searchParams.get('mock') : null
+  const server = hasMoyangApi && !isMeetingPreview(search)
   const [attempt, setAttempt] = useState(0)
   const [list, setList] = useState<MeetingListData | 'error' | null>(null)
   const [now, setNow] = useState(Date.now)
   const meetings = list && list !== 'error' ? list.meetings : []
   const myMeetings = list && list !== 'error' ? list.myMeetings : []
   const discoverableMeetings = meetings.filter(
-    (meeting) => meeting.status === 'waiting' && (meeting.kind === 'live' || meeting.startAt > now),
+    (meeting) =>
+      meeting.status === 'waiting' && (server || meeting.kind === 'live' || meeting.startAt > now),
   )
   const joinedLiveMeetings = myMeetings.filter(
     ({ kind, membership, hasEntered }) =>
@@ -490,24 +501,37 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
 
   useEffect(() => {
     let active = true
+    let refreshTimer: number | undefined
 
-    loadMeetingList({
-      empty: scenario === 'empty',
-      fail: scenario === 'error',
-      states: scenario === 'meeting-states',
-      many: scenario === 'many',
-      expiringPast: scenario === 'past-expiring',
-      delay: scenario === 'loading' ? 5000 : undefined,
-    }).then(
+    const controller = new AbortController()
+    const loading = server
+      ? loadServerMeetings(concern, controller.signal)
+      : loadMeetingList({
+          empty: scenario === 'empty',
+          fail: scenario === 'error',
+          states: scenario === 'meeting-states',
+          many: scenario === 'many',
+          expiringPast: scenario === 'past-expiring',
+          delay: scenario === 'loading' ? 5000 : undefined,
+        })
+    loading.then(
       (data) => {
         if (active) {
           setNow(Date.now())
           const created = getPreviewCreatedMeetings()
-          setList({
+          const next = {
             ...data,
             meetings: [...created, ...data.meetings],
             myMeetings: [...created, ...data.myMeetings],
-          })
+          }
+          setList((previous) =>
+            server && JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
+          )
+          if (server && tab === 'mine' && (data.myMeetings.length > 0 || data.recheckHistory)) {
+            refreshTimer = window.setTimeout(() => {
+              if (!document.hidden) setAttempt((value) => value + 1)
+            }, 6000)
+          }
         }
       },
       () => {
@@ -517,17 +541,32 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
 
     return () => {
       active = false
+      controller.abort()
+      window.clearTimeout(refreshTimer)
     }
-  }, [scenario, attempt])
+  }, [scenario, attempt, concern, server, tab])
 
   useEffect(() => {
     const refresh = (event: StorageEvent) => {
-      if (isMeetingStorageEvent(event) || isMeetingChatStorageEvent(event.key))
+      if (
+        isMeetingStorageEvent(event) ||
+        isMeetingChatStorageEvent(event.key) ||
+        (server && isServerPastMeetingStorageKey(event.key))
+      )
         setAttempt((value) => value + 1)
     }
     window.addEventListener('storage', refresh)
     return () => window.removeEventListener('storage', refresh)
-  }, [])
+  }, [server])
+
+  useEffect(() => {
+    if (!server || tab !== 'mine') return
+    const refresh = () => {
+      if (!document.hidden) setAttempt((value) => value + 1)
+    }
+    document.addEventListener('visibilitychange', refresh)
+    return () => document.removeEventListener('visibilitychange', refresh)
+  }, [server, tab])
 
   useEffect(() => {
     if (!list || list === 'error') return

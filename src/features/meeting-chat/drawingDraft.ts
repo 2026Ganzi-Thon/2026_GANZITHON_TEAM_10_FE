@@ -19,8 +19,8 @@ export type DrawingDraftPatch = Partial<
 
 const databaseName = 'moyang:meeting-drawings'
 const storeName = 'drafts'
-const keyFor = ({ scope, meetingId, scenario = null }: ChatStorageContext) =>
-  JSON.stringify([scope, meetingId, scenario])
+const keyFor = ({ scope, meetingId, scenario = null, server }: ChatStorageContext) =>
+  JSON.stringify([scope, meetingId, server ? 'server' : scenario])
 
 export const openDrawingDraftChannel = (context: ChatStorageContext) => {
   if (typeof BroadcastChannel === 'undefined') return null
@@ -195,12 +195,15 @@ export const saveDrawingDraft = async (
     throw new Error('그림을 안전하게 저장할 수 없어요. 다른 브라우저에서 다시 시도해 주세요.')
   const saved = await navigator.locks.request(mockStorageLock, async () => {
     assertScope(context.scope)
-    const chat = readMeetingChat(context)
+    const chat = context.server ? null : readMeetingChat(context)
     if (
-      !chat ||
-      chat.endedAt !== null ||
-      chat.phase !== 'DRAWING' ||
-      chat.messages.some((message) => message.type === 'DRAWING' && message.participantId === 'me')
+      !context.server &&
+      (!chat ||
+        chat.endedAt !== null ||
+        chat.phase !== 'DRAWING' ||
+        chat.messages.some(
+          (message) => message.type === 'DRAWING' && message.participantId === 'me',
+        ))
     ) {
       throw new Error('이미 공유했거나 그림 그리기 단계가 끝났어요. 원본 그림은 보관돼요.')
     }

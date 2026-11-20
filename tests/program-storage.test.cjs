@@ -22,6 +22,7 @@ function environment(saved) {
     [storageKey, saved],
     ['moyang.accessToken', `test.${Buffer.from('{"sub":"a"}').toString('base64url')}.test`],
   ])
+  const sessionValues = new Map()
   const navigator = {
     locks: {
       request(_key, options, callback) {
@@ -39,7 +40,11 @@ function environment(saved) {
       },
       key: (index) => [...values.keys()][index] ?? null,
     },
-    sessionStorage: { getItem: () => null, removeItem() {} },
+    sessionStorage: {
+      getItem: (key) => sessionValues.get(key) ?? null,
+      setItem: (key, value) => sessionValues.set(key, String(value)),
+      removeItem: (key) => sessionValues.delete(key),
+    },
     navigator,
     window: { navigator, setTimeout: (callback) => setTimeout(callback, 0), clearTimeout },
     atob,
@@ -70,9 +75,44 @@ function environment(saved) {
   }
   return {
     values,
+    sessionValues,
     programs: load(path.join(root, 'src/features/personal-program/programMock.ts')),
+    schedule: load(path.join(root, 'src/features/personal-program/programSchedule.ts')),
   }
 }
+
+const drawingActivity = {
+  programId: 'RELATION_FAMILY',
+  round: 2,
+  date: '2026-11-19',
+  concern: { id: 'RELATION_FAMILY', label: '인간관계·가족' },
+  topicId: 42,
+  topic: '관계 속 나의 자리',
+  description: '가까운 사람들과 함께 있을 때의 내 모습을 그려 보세요.',
+}
+
+test('다른 탭에서 같은 계정과 그림의 활동 회차를 읽는다', () => {
+  const original = environment('[]')
+  const nextTab = environment('[]')
+  original.schedule.rememberDrawingActivity('moyang:user:a', 17, drawingActivity)
+  for (const [key, value] of original.values) nextTab.values.set(key, value)
+
+  assert.deepEqual(
+    plain(nextTab.schedule.readDrawingActivity('moyang:user:a', 17)),
+    drawingActivity,
+  )
+  assert.equal(nextTab.schedule.readDrawingActivity('moyang:user:a', 18), undefined)
+  assert.equal(nextTab.schedule.readDrawingActivity('moyang:user:b', 17), undefined)
+})
+
+test('같은 탭에서는 기존 세션에 저장된 활동 회차도 읽는다', () => {
+  const { schedule, sessionValues, values } = environment('[]')
+  const key = JSON.stringify(['moyang:program-drawing', 'moyang:user:a', 17])
+  values.set(key, 'malformed')
+  sessionValues.set(key, JSON.stringify(drawingActivity))
+
+  assert.deepEqual(plain(schedule.readDrawingActivity('moyang:user:a', 17)), drawingActivity)
+})
 
 for (const [name, damaged] of [
   ['누락된 회고', { ...program, firstReflection: null }],

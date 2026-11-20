@@ -16,7 +16,12 @@ export const getAccessToken = () => {
  * 백엔드 요청에서 공통으로 사용하는 클라이언트다.
  */
 export const apiClient = axios.create({
-  baseURL: import.meta.env.DEV ? '' : import.meta.env.VITE_API_PRODUCTION_URL || '',
+  baseURL: import.meta.env.DEV
+    ? ''
+    : (import.meta.env.VITE_API_PRODUCTION_URL ?? '')
+        .trim()
+        .replace(/\/+$/, '')
+        .replace(/\/api$/, ''),
   timeout: 10_000,
 })
 

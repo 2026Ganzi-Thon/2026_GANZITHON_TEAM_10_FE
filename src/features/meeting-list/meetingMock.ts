@@ -29,6 +29,7 @@ type MeetingInfo = {
   membership?: 'host' | 'participant'
   hasEntered?: boolean
   woolPaid?: boolean
+  server?: boolean
 }
 
 export type LiveMeeting = MeetingInfo & { kind: 'live' }
@@ -41,6 +42,8 @@ export type Meeting = LiveMeeting | ScheduledMeeting
 export type PastMeeting = Pick<MeetingInfo, 'id' | 'title' | 'concern'> & {
   startAt: number
   endAt: number
+  deleteAt?: number
+  server?: boolean
   hasChatHistory?: boolean
   hasDrawing?: boolean
 }
@@ -51,6 +54,7 @@ export type MeetingListData = {
   meetings: Meeting[]
   myMeetings: Meeting[]
   pastMeetings: PastMeeting[]
+  recheckHistory?: boolean
 }
 
 const day = 86_400_000

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useMoyangImage } from '@/hooks/useMoyangImage'
 import type { ComponentProps } from 'react'
 import type { ConversationDrawing } from './conversationMock'
 
@@ -7,6 +8,8 @@ type DrawingImageProps = ComponentProps<'img'> & {
 }
 
 export const DrawingImage = ({ previewPhoto, src, ...props }: DrawingImageProps) => {
+  const protectedPath = src?.startsWith('/api/drawings/') ? src : undefined
+  const image = useMoyangImage(protectedPath)
   const imageRef = useRef<HTMLImageElement>(null)
 
   useEffect(() => {
@@ -17,5 +20,13 @@ export const DrawingImage = ({ previewPhoto, src, ...props }: DrawingImageProps)
     return () => URL.revokeObjectURL(url)
   }, [previewPhoto])
 
-  return <img ref={imageRef} src={previewPhoto ? undefined : src} {...props} />
+  if (protectedPath && image === null) return <span>그림을 불러올 수 없어요</span>
+
+  return (
+    <img
+      ref={imageRef}
+      src={previewPhoto ? undefined : protectedPath ? (image ?? undefined) : src}
+      {...props}
+    />
+  )
 }
