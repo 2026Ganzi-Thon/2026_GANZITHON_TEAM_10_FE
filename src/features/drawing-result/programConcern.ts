@@ -1,0 +1,37 @@
+import { apiClient, getAccessToken } from '@/lib/api-client'
+import type { ProgramConcern } from '@/features/personal-program/programSchedule'
+
+type UserResponse = {
+  success: boolean
+  data: { onboarding: { themeCode: string | null; themeText: string | null } | null } | null
+}
+
+type OptionsResponse = {
+  success: boolean
+  data: { themes: { code: string; label: string }[] } | null
+}
+
+export const loadProgramConcern = async (
+  signal: AbortSignal,
+): Promise<ProgramConcern | undefined> => {
+  const token = getAccessToken()
+  const headers = { Authorization: token ? `Bearer ${token}` : false }
+  const { data: profile } = await apiClient.get<UserResponse>('/api/users/me', { headers, signal })
+  const onboarding = profile.success ? profile.data?.onboarding : null
+  if (!onboarding?.themeCode) return
+
+  const { themeCode, themeText } = onboarding
+  if (themeCode === 'DIRECT') {
+    const label = themeText?.trim()
+    return label ? { id: `DIRECT:${label}`, label } : undefined
+  }
+
+  const { data: options } = await apiClient.get<OptionsResponse>('/api/onboarding/options', {
+    headers,
+    signal,
+  })
+  const theme = options.success
+    ? options.data?.themes.find(({ code }) => code === themeCode)
+    : undefined
+  if (theme) return { id: theme.code, label: theme.label }
+}

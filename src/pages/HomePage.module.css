@@ -2,6 +2,10 @@
   padding: 24px;
 }
 
+.personalProgram {
+  margin-bottom: 24px;
+}
+
 .example {
   display: grid;
   gap: 12px;

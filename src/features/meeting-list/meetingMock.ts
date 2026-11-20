@@ -1,0 +1,371 @@
+import {
+  applyWaitingRoomStatus,
+  isWaitingRoomStorageEvent,
+} from '@/features/meeting-waiting-room/waitingRoomMock'
+import { readReflections } from '@/lib/mock-reflections'
+import type { MockMeetingReservation } from '@/lib/mock-reflections'
+
+export const meetingConcerns = [
+  { id: 'STUDY_CAREER', label: '학업·진로·일' },
+  { id: 'LOVE', label: '연애·이별' },
+  { id: 'RELATION_FAMILY', label: '인간관계·가족' },
+  { id: 'SELF_HEALTH', label: '나 자신·건강' },
+  { id: 'DAILY_FUTURE', label: '일상·미래' },
+  { id: 'MONEY', label: '경제·금전' },
+] as const
+
+export type MeetingConcern = (typeof meetingConcerns)[number]['id']
+
+export const meetingCapacities = [2, 4, 6] as const
+
+type MeetingInfo = {
+  id: string
+  title: string
+  description: string
+  concern: MeetingConcern
+  participants: number
+  capacity: (typeof meetingCapacities)[number]
+  status: 'waiting' | 'in-progress' | 'cancelled'
+  membership?: 'host' | 'participant'
+  hasEntered?: boolean
+  woolPaid?: boolean
+  server?: boolean
+}
+
+export type LiveMeeting = MeetingInfo & { kind: 'live' }
+export type ScheduledMeeting = MeetingInfo & {
+  kind: 'scheduled'
+  startAt: number
+  bookingId?: string
+}
+export type Meeting = LiveMeeting | ScheduledMeeting
+export type PastMeeting = Pick<MeetingInfo, 'id' | 'title' | 'concern'> & {
+  startAt: number
+  endAt: number
+  deleteAt?: number
+  server?: boolean
+  hasChatHistory?: boolean
+  hasDrawing?: boolean
+}
+
+export const pastConversationDuration = 24 * 60 * 60 * 1000
+
+export type MeetingListData = {
+  meetings: Meeting[]
+  myMeetings: Meeting[]
+  pastMeetings: PastMeeting[]
+  recheckHistory?: boolean
+}
+
+const day = 86_400_000
+const now = Date.now()
+const kstDateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' })
+const kstDate = kstDateFormat.format(now)
+const atKst = (time: string, daysAhead: number) =>
+  Date.parse(kstDate + 'T' + time + '+09:00') + daysAhead * day
+
+const liveMeetings: LiveMeeting[] = [
+  {
+    id: '101',
+    title: '지금 내 마음의 날씨는?',
+    description: '오늘의 감정을 날씨로 표현해 주세요.',
+    concern: 'SELF_HEALTH',
+    kind: 'live',
+    participants: 1,
+    capacity: 4,
+    status: 'waiting',
+  },
+  {
+    id: '102',
+    title: '요즘 나를 지탱해 주는 것',
+    description: '나를 버티게 해주는 존재나 힘을 그려요.',
+    concern: 'RELATION_FAMILY',
+    kind: 'live',
+    participants: 1,
+    capacity: 2,
+    status: 'waiting',
+  },
+  {
+    id: '103',
+    title: '요즘 나에게 가장 필요한 것은?',
+    description: '내 마음에 가장 필요한 것을 자유롭게 표현해 주세요.',
+    concern: 'SELF_HEALTH',
+    kind: 'live',
+    participants: 1,
+    capacity: 6,
+    status: 'waiting',
+  },
+]
+
+const scheduledMeetings: ScheduledMeeting[] = [
+  {
+    id: '201',
+    title: '나와 너 사이',
+    description: '사람들과의 관계에서 겪은 고민과 경험을 각자의 그림과 함께 나눠요.',
+    concern: 'RELATION_FAMILY',
+    kind: 'scheduled',
+    startAt: atKst('20:00:00', 2),
+    participants: 2,
+    capacity: 6,
+    status: 'waiting',
+    membership: 'host',
+  },
+  {
+    id: '202',
+    title: '관계가 어려웠던 날',
+    description: '누군가와의 관계에서 마음이 복잡했던 순간을 그림과 함께 이야기해요.',
+    concern: 'RELATION_FAMILY',
+    kind: 'scheduled',
+    startAt: atKst('09:00:00', 5),
+    participants: 1,
+    capacity: 6,
+    status: 'waiting',
+    membership: 'participant',
+  },
+  {
+    id: '211',
+    title: '마음을 나누는 시간',
+    description: '관계 속에서 느낀 감정을 그림으로 표현하고 서로의 이야기를 나눠요.',
+    concern: 'RELATION_FAMILY',
+    kind: 'scheduled',
+    startAt: atKst('20:00:00', 3),
+    participants: 2,
+    capacity: 6,
+    status: 'waiting',
+  },
+]
+
+const meetings: Meeting[] = [...liveMeetings, ...scheduledMeetings]
+
+const extraMeetings: Meeting[] = [
+  {
+    ...liveMeetings[1],
+    id: '109',
+    title: '친구에게 전하고 싶은 말',
+    description: '친구에게 전하지 못한 말을 그림으로 표현해 봐요.',
+  },
+  {
+    ...liveMeetings[2],
+    id: '110',
+    title: '나를 편안하게 해 주는 것',
+    description: '하루 중 마음이 편해지는 순간을 그려 봐요.',
+  },
+  {
+    ...scheduledMeetings[0],
+    id: '208',
+    title: '우리가 함께한 시간',
+    description: '가까운 사람과 함께한 장면을 그려 보고 이야기를 나눠요.',
+    membership: undefined,
+    startAt: atKst('18:00:00', 6),
+  },
+  {
+    ...scheduledMeetings[1],
+    id: '209',
+    title: '가족에게 전하는 마음',
+    description: '가족에게 전하고 싶은 마음을 그림으로 표현해 봐요.',
+    membership: undefined,
+    startAt: atKst('14:00:00', 7),
+  },
+  {
+    ...scheduledMeetings[0],
+    id: '210',
+    title: '나만의 쉼터',
+    description: '잠시 쉬어 갈 수 있는 나만의 공간을 그려 봐요.',
+    concern: 'SELF_HEALTH',
+    membership: undefined,
+    startAt: atKst('20:00:00', 8),
+  },
+]
+
+const meetingStates: Meeting[] = [
+  { ...liveMeetings[0], id: '104', participants: 4 },
+  { ...liveMeetings[1], id: '105', participants: 2, status: 'in-progress' },
+  {
+    ...liveMeetings[2],
+    id: '106',
+    participants: 2,
+    status: 'in-progress',
+    membership: 'participant',
+    hasEntered: true,
+  },
+  { ...liveMeetings[0], id: '107', participants: 4, membership: 'host', hasEntered: true },
+  { ...liveMeetings[0], id: '108', status: 'cancelled' },
+  { ...scheduledMeetings[0], id: '203', participants: 6, membership: undefined },
+  {
+    ...scheduledMeetings[0],
+    id: '204',
+    startAt: now - 20 * 60 * 1000,
+    status: 'in-progress',
+    membership: undefined,
+  },
+  {
+    ...scheduledMeetings[1],
+    id: '205',
+    startAt: now - 20 * 60 * 1000,
+    participants: 2,
+    status: 'in-progress',
+    hasEntered: true,
+  },
+  { ...scheduledMeetings[0], id: '206', status: 'cancelled' },
+  {
+    ...scheduledMeetings[1],
+    id: '207',
+    startAt: now - 20 * 60 * 1000,
+    participants: 2,
+    status: 'in-progress',
+  },
+  { ...scheduledMeetings[1], id: '212', startAt: now + 9 * 60 * 1000 },
+  { ...scheduledMeetings[0], id: '213', startAt: now + 9 * 60 * 1000 },
+  { ...scheduledMeetings[0], id: '220', startAt: now + 9 * 60 * 1000 },
+  { ...scheduledMeetings[1], id: '214', startAt: now + 4 * 60 * 1000 },
+  { ...scheduledMeetings[1], id: '218', startAt: now + 4 * 60 * 1000 },
+  { ...scheduledMeetings[2], id: '215', startAt: now + 9 * 60 * 1000 },
+  {
+    ...scheduledMeetings[2],
+    id: '217',
+    title: 'SharingOurFeelingsThroughDrawingAndConversation',
+    description: '조금 긴 이야기도 그림과 함께 천천히 나눌 수 있는 시간이에요.',
+    startAt: atKst('20:00:00', 8),
+  },
+  { ...scheduledMeetings[1], id: '221', startAt: now - 3 * 60 * 1000 },
+  { ...scheduledMeetings[1], id: '222', startAt: now - 60 * 1000 },
+]
+
+const pastMeetings: PastMeeting[] = [
+  {
+    id: '301',
+    title: '관계가 어려웠던 날',
+    concern: 'RELATION_FAMILY',
+    startAt: now - 3 * 60 * 60 * 1000,
+    endAt: now - 2 * 60 * 60 * 1000,
+  },
+  {
+    id: '302',
+    title: '지금 내 마음의 날씨는?',
+    concern: 'SELF_HEALTH',
+    startAt: atKst('19:00:00', -5),
+    endAt: atKst('20:00:00', -5),
+  },
+]
+
+const recurringMockMeetingIds = new Set(['201', '202', '211', '208', '209', '210', '217'])
+
+const getAvailableMockStartAt = (meeting: ScheduledMeeting, previousStartAt?: number) => {
+  const current = Date.now()
+  if (previousStartAt !== undefined && previousStartAt > current) return previousStartAt
+  if (meeting.startAt > current || !recurringMockMeetingIds.has(meeting.id)) return meeting.startAt
+  const today = Date.parse(kstDateFormat.format(current) + 'T00:00:00+09:00')
+  const fixtureDay = atKst('00:00:00', 0)
+  return meeting.startAt + today - fixtureDay
+}
+
+const applyReservation = (
+  meeting: Meeting,
+  reservations: Record<string, MockMeetingReservation> = {},
+): Meeting => {
+  const reservation = reservations[meeting.id]
+  if (meeting.kind !== 'scheduled') return meeting
+  if (!reservation) {
+    return {
+      ...meeting,
+      startAt:
+        meeting.status === 'waiting' && !meeting.membership
+          ? getAvailableMockStartAt(meeting)
+          : meeting.startAt,
+      woolPaid: false,
+    }
+  }
+  return {
+    ...meeting,
+    startAt:
+      reservation.joined || reservation.cancelled
+        ? reservation.startAt
+        : getAvailableMockStartAt(meeting, reservation.startAt),
+    membership: reservation.joined ? (reservation.isHost ? 'host' : 'participant') : undefined,
+    bookingId: reservation.joined ? reservation.bookingId : undefined,
+    participants: Math.max(0, meeting.participants + reservation.participantDelta),
+    status: reservation.cancelled ? 'cancelled' : meeting.status,
+    woolPaid: reservation.joined && reservation.woolChange < 0,
+  }
+}
+
+export const getMockMeetingFixture = (
+  meetingId: string | undefined,
+  reservations?: Record<string, MockMeetingReservation>,
+) => {
+  const meeting =
+    meetings.find(({ id }) => id === meetingId) ??
+    (meetingId?.startsWith('preview-')
+      ? getPreviewCreatedMeetings().find(({ id }) => id === meetingId)
+      : undefined) ??
+    (import.meta.env.DEV
+      ? [...meetingStates, ...extraMeetings].find(({ id }) => id === meetingId)
+      : undefined)
+  if (!meeting || meeting.kind === 'live') return meeting
+  return applyReservation(meeting, reservations ?? readReflections().meetingReservations)
+}
+
+export const getMockMeeting = (
+  meetingId: string | undefined,
+  reservations?: Record<string, MockMeetingReservation>,
+) => {
+  const meeting = getMockMeetingFixture(meetingId, reservations)
+  return meeting && applyWaitingRoomStatus(meeting, Date.now())
+}
+
+export const isMeetingStorageEvent = ({ key }: StorageEvent) =>
+  isWaitingRoomStorageEvent(key) ||
+  key === 'moyang.accessToken' ||
+  Boolean(key?.includes('mock-reflection-records'))
+
+export const loadMeetings = async ({
+  empty,
+  fail,
+  states = false,
+  many = false,
+  expiringPast = false,
+  delay = 300,
+}: {
+  empty: boolean
+  fail: boolean
+  states?: boolean
+  many?: boolean
+  expiringPast?: boolean
+  delay?: number
+}): Promise<MeetingListData> => {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, delay))
+  if (fail) throw new Error('Mock meeting list unavailable')
+  if (empty) return { meetings: [], myMeetings: [], pastMeetings: [] }
+  const endAt = Date.now() - pastConversationDuration + 5000
+  const reservations = readReflections().meetingReservations ?? {}
+  const selected = states ? meetingStates : many ? [...meetings, ...extraMeetings] : meetings
+  const visibleMeetings = selected.map((meeting) => applyReservation(meeting, reservations))
+  const visibleIds = new Set(visibleMeetings.map(({ id }) => id))
+  const otherReservations = Object.entries(reservations).flatMap(([id, reservation]) => {
+    if (!reservation.joined || visibleIds.has(id)) return []
+    const meeting = getMockMeetingFixture(id, reservations)
+    return meeting?.kind === 'scheduled' ? [meeting] : []
+  })
+  return {
+    meetings: visibleMeetings,
+    myMeetings: [...visibleMeetings, ...otherReservations].filter(
+      ({ membership, status }) => membership && status !== 'cancelled',
+    ),
+    pastMeetings: expiringPast
+      ? [{ ...pastMeetings[0], startAt: endAt - 60 * 60 * 1000, endAt }]
+      : pastMeetings,
+  }
+}
+
+/** 개발용 미리보기에서 생성한 모임을 현재 세션 동안 표시한다. */
+export const getPreviewCreatedMeetings = (): Meeting[] => {
+  if (!import.meta.env.DEV || !new URLSearchParams(window.location.search).has('preview')) return []
+  try {
+    const value: unknown = JSON.parse(
+      sessionStorage.getItem('moyang.preview.createdMeetings') || '[]',
+    )
+    return Array.isArray(value) ? (value as Meeting[]) : []
+  } catch {
+    return []
+  }
+}
