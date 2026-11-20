@@ -14,6 +14,7 @@ export type Conversation = {
   id?: string
   messages: Message[]
   questionIndex: number
+  remainingFreeQuestions?: number
   canExtend?: boolean
   supportNotice?: { message: string; actionLabel: string; phone: string }
   status: 'asking' | 'review' | 'support' | 'ended'
@@ -116,14 +117,15 @@ export const updateConversation = async (
 ): Promise<Conversation> => {
   await waitForResponse(500, fail)
 
-  const { questionIndex, messages } = conversation
+  const { questionIndex } = conversation
+  const messages: Message[] =
+    conversation.status === 'support'
+      ? [...conversation.messages, { role: 'support', text: supportMessage }]
+      : conversation.messages
   if (action.type === 'END') {
     return {
       ...conversation,
-      messages:
-        conversation.status === 'support'
-          ? [...messages, { role: 'support', text: supportMessage }]
-          : messages,
+      messages,
       status: 'ended',
     }
   }
@@ -139,8 +141,13 @@ export const updateConversation = async (
   }
 
   const reply: Message = { role: 'user', text: getReplyText(action) }
-  if (showSupport && action.type === 'ANSWER') {
-    return { ...conversation, messages: [...messages, reply], status: 'support' }
+  if (showSupport && action.type === 'ANSWER' && !messages.some(({ role }) => role === 'support')) {
+    return {
+      ...conversation,
+      messages: [...messages, reply],
+      remainingFreeQuestions: Math.max(0, questions.length - questionIndex - 1),
+      status: 'support',
+    }
   }
 
   const nextQuestion = questions[questionIndex + 1]

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowUp } from '@fortawesome/free-solid-svg-icons'
 import { Button, Modal, PageHeader } from '@/components'
@@ -18,7 +18,7 @@ import { getMeetingListPath } from '@/features/meeting-list/meetingEntry'
 import { pastConversationDuration } from '@/features/meeting-list/meetingMock'
 import { readServerPastMeeting } from '@/features/meeting-list/serverMeetingHistory'
 import { MoyangApiError } from '@/lib/moyang-api'
-import { maskMeetingText, phaseLabels } from './chatContent'
+import { maskMeetingText, phaseLabels, phasePrompts } from './chatContent'
 import { ChatGuide } from './ChatGuide'
 import { drawingDuration, drawingGraceDuration, formatRemainingTime } from './chatTiming'
 import { readDrawingDraft } from './drawingDraft'
@@ -63,6 +63,7 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
   const lastSentTextId = useRef(0)
   const uncertainText = useRef<{ content: string; afterId: number } | undefined>(undefined)
   const messageList = useRef<HTMLDivElement>(null)
+  const drawingCard = useRef<HTMLDivElement>(null)
   const { chat, canSkip, error, refresh } = useServerMeetingChat(id, scope, !expired)
   const ended = chat?.status === 'ENDED'
   const deleteAt = chat?.deleteAt
@@ -79,15 +80,17 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
   const shouldReadReflection =
     (showReflection && canViewReflection) || (lookupEndedDrawing && !history)
   const active = chat?.status === 'IN_PROGRESS' && !error
-  const canDraw = active && chat.phase === 'DRAWING' && !ownDrawing
+  const isDrawing = active && chat.phase === 'DRAWING'
+  const canDraw = isDrawing && !ownDrawing
   const canAdvance = active && canSkip && (chat.phase === 'INTRO' || chat.phase === 'SHARING')
-  const drawingStartedAt =
-    active && chat.phase === 'DRAWING'
-      ? chat.messages.findLast((message) => message.type === 'SYSTEM')?.createdAt
-      : undefined
+  const drawingGuide = isDrawing
+    ? chat.messages.findLast((message) => message.type === 'SYSTEM')
+    : undefined
+  const drawingStartedAt = drawingGuide?.createdAt
   const drawingRemaining = drawingStartedAt
-    ? Date.parse(drawingStartedAt) + drawingDuration - now
+    ? Math.min(drawingDuration, Date.parse(drawingStartedAt) + drawingDuration - now)
     : NaN
+  const hasDraftPhoto = Boolean(draft?.photo)
 
   useEffect(() => () => mutation.current?.abort(), [])
   useEffect(() => {
@@ -154,6 +157,9 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
     const list = messageList.current
     if (list) list.scrollTop = list.scrollHeight
   }, [messageCount])
+  useEffect(() => {
+    if (canDraw && hasDraftPhoto) drawingCard.current?.scrollIntoView({ block: 'nearest' })
+  }, [canDraw, hasDraftPhoto])
 
   const sendText = async (signal: AbortSignal) => {
     const content = text.trim()
@@ -242,6 +248,10 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
 
   const back = () =>
     navigate(listPath, { state: { meetingListKey: location.state?.meetingListKey } })
+  const openDrawing = (step: 'upload' | 'canvas' | 'details') =>
+    navigate(`${path}/drawing/${step}`, {
+      state: { ...location.state, meetingChatIndex: window.history.state?.idx },
+    })
   const openReflection = () => {
     setReflectionError('')
     setShowReflection(true)
@@ -298,9 +308,91 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
     return <Navigate replace to={`${path}/waiting`} state={location.state} />
   }
 
+  const drawingActions = isDrawing && (
+    <div className={styles.methodChoices} ref={drawingCard}>
+      <div className={styles.drawingProgress}>
+        <p role="status">
+          그림 제출 {chat.submittedDrawingCount}/{chat.participantCount}명
+        </p>
+        {canDraw &&
+          Number.isFinite(drawingRemaining) &&
+          (drawingRemaining > 0 ? (
+            <p role="timer">그리기 남은 시간 {formatRemainingTime(drawingRemaining)}</p>
+          ) : drawingRemaining + drawingGraceDuration > 0 ? (
+            <p role="timer">
+              그림 제출까지 {formatRemainingTime(drawingRemaining + drawingGraceDuration)} 더
+              기다릴게요.
+            </p>
+          ) : (
+            <p>모두 그림을 공유하면 다음 단계로 넘어가요.</p>
+          ))}
+      </div>
+      {canDraw && (
+        <>
+          <div>
+            <button type="button" disabled={pending} onClick={() => openDrawing('upload')}>
+              종이에 그리기
+            </button>
+            <span>그린 뒤 사진을 올려 주세요.</span>
+          </div>
+          <div>
+            <button type="button" disabled={pending} onClick={() => openDrawing('canvas')}>
+              앱에서 그리기
+            </button>
+            <span>화면에 바로 그릴 수 있어요.</span>
+          </div>
+          {hasDraftPhoto && (
+            <>
+              <button type="button" disabled={pending} onClick={() => openDrawing('details')}>
+                그림 수정하기
+              </button>
+              <Button
+                className={styles.shareDrawing}
+                disabled={pending}
+                onClick={() => setDialog('share')}
+              >
+                그림 공유하기
+              </Button>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+
   return (
     <div className={`${styles.shell} ${styles.serverChat}`}>
-      <PageHeader title="모양 모임" action="back" onNavigate={back} />
+      <PageHeader
+        title="모양 모임"
+        action="back"
+        onNavigate={back}
+        actions={
+          active && (
+            <>
+              {(canAdvance || (isDrawing && canSkip)) && (
+                <button
+                  type="button"
+                  className={styles.headerAction}
+                  disabled={pending || !canAdvance}
+                  onClick={() => setDialog('advance')}
+                >
+                  다음 단계로
+                </button>
+              )}
+              <button
+                type="button"
+                className={styles.headerAction}
+                disabled={pending || chat.endAgreed}
+                onClick={() => setDialog('end')}
+              >
+                {chat.endAgreed
+                  ? `종료 동의 ${chat.endAgreedCount}/${chat.participantCount}`
+                  : '대화 종료'}
+              </button>
+            </>
+          )
+        }
+      />
       {!chat ? (
         error ? (
           <Modal
@@ -360,6 +452,7 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
                 return (
                   <ChatGuide key={message.messageId}>
                     <p className={styles.bubble}>{content}</p>
+                    {message.messageId === drawingGuide?.messageId && drawingActions}
                     {timestamp}
                   </ChatGuide>
                 )
@@ -393,6 +486,12 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
                 </div>
               )
             })}
+            {!drawingGuide && drawingActions && (
+              <ChatGuide>
+                <p className={styles.bubble}>{phasePrompts.DRAWING}</p>
+                {drawingActions}
+              </ChatGuide>
+            )}
           </div>
           {error !== undefined && (
             <div className={styles.error} role="alert">
@@ -407,76 +506,27 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
               {actionError}
             </p>
           )}
-          {active && chat.phase === 'DRAWING' && (
-            <p className={styles.submissionNotice} role="status">
-              그림 제출 {chat.submittedDrawingCount}/{chat.participantCount}명
-            </p>
-          )}
-          {canDraw && (
-            <div className={styles.drawingActions}>
-              {!Number.isNaN(drawingRemaining) &&
-                (drawingRemaining > 0 ? (
-                  <span className={styles.drawingTimer}>
-                    그리기 남은 시간 {formatRemainingTime(drawingRemaining)}
-                  </span>
-                ) : drawingRemaining + drawingGraceDuration > 0 ? (
-                  <span className={styles.drawingTimer} role="status">
-                    그림 제출까지 {formatRemainingTime(drawingRemaining + drawingGraceDuration)} 더
-                    기다릴게요.
-                  </span>
-                ) : (
-                  <span className={styles.drawingTimer} role="status">
-                    모두 그림을 공유하면 다음 단계로 넘어가요.
-                  </span>
-                ))}
-              <Link
-                to={`${path}/drawing/choose`}
-                state={{ ...location.state, meetingChatIndex: window.history.state?.idx }}
-              >
-                {draft?.photo ? '그림 수정하기' : '그리기 방식 선택'}
-              </Link>
-              {draft?.photo && (
-                <Button disabled={pending} onClick={() => setDialog('share')}>
-                  그림 공유하기
-                </Button>
-              )}
-            </div>
-          )}
           {active && (
-            <>
-              <div className={styles.endActions}>
-                {canAdvance && (
-                  <Button disabled={pending} onClick={() => setDialog('advance')}>
-                    다음 단계로
-                  </Button>
-                )}
-                <Button disabled={pending || chat.endAgreed} onClick={() => setDialog('end')}>
-                  {chat.endAgreed
-                    ? `종료 동의 ${chat.endAgreedCount}/${chat.participantCount}`
-                    : '대화 종료'}
-                </Button>
-              </div>
-              <form
-                className={styles.composer}
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void run('send')
-                }}
-              >
-                <textarea
-                  aria-label="메시지 입력"
-                  placeholder="메시지를 입력해 주세요"
-                  rows={1}
-                  maxLength={500}
-                  value={text}
-                  onChange={(event) => setText(event.target.value)}
-                  readOnly={pending}
-                />
-                <button type="submit" aria-label="전송" disabled={pending || !text.trim()}>
-                  <FontAwesomeIcon icon={faArrowUp} aria-hidden="true" />
-                </button>
-              </form>
-            </>
+            <form
+              className={styles.composer}
+              onSubmit={(event) => {
+                event.preventDefault()
+                void run('send')
+              }}
+            >
+              <textarea
+                aria-label="메시지 입력"
+                placeholder="메시지를 입력해 주세요"
+                rows={1}
+                maxLength={500}
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                readOnly={pending}
+              />
+              <button type="submit" aria-label="전송" disabled={pending || !text.trim()}>
+                <FontAwesomeIcon icon={faArrowUp} aria-hidden="true" />
+              </button>
+            </form>
           )}
           {ended && ownDrawing && <Button onClick={openReflection}>내 그림 이야기 보기</Button>}
         </>

@@ -278,6 +278,23 @@
 .methodChoices .resumeDrawing {
   grid-column: 1 / -1;
 }
+.methodChoices .shareDrawing {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+.drawingProgress {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  padding: 4px 0;
+  color: var(--color-primary);
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.drawingProgress p {
+  margin: 0;
+}
 .drawingTimer {
   display: block;
   margin-top: 6px;
@@ -359,43 +376,34 @@
 .serverChat .messageBody {
   max-width: 100%;
 }
-.phaseNotice,
-.submissionNotice {
+.phaseNotice {
   flex: none;
   margin: 0;
   padding: 8px 16px;
+  background: var(--color-surface-green);
   color: var(--color-primary);
   font-size: var(--font-size-caption);
   text-align: center;
   overflow-wrap: anywhere;
 }
-.phaseNotice {
-  background: var(--color-surface-green);
-}
-.serverChat .drawingActions {
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 22px;
-}
-.serverChat .drawingActions > .drawingTimer {
-  flex: 0 0 100%;
-  margin: 0;
-  text-align: center;
-}
-.serverChat .drawingActions > a {
-  display: grid;
-  flex: 1;
-  min-height: 44px;
-  place-items: center;
-  padding: 8px;
-  border-radius: 8px;
+.serverChat > header {
+  flex: none;
   background: var(--color-white);
-  color: var(--color-primary);
-  font-size: var(--font-size-caption);
-  text-align: center;
 }
-.serverChat .endActions {
-  margin-top: 0;
+.headerAction {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-black);
+  font: inherit;
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.headerAction:disabled {
+  color: var(--color-gray);
+  cursor: default;
 }
 .serverChat .historyTimer {
   flex: none;

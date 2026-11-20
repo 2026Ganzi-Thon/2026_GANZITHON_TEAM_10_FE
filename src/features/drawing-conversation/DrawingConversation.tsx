@@ -109,6 +109,8 @@ export const DrawingConversation = ({
   const firstReply = useRef<HTMLButtonElement>(null)
   const restoreReplyFocus = useRef(false)
   const isAsking = conversation?.status === 'asking'
+  const isShowingSupport = conversation?.status === 'support'
+  const canAnswer = isAsking || (isShowingSupport && (conversation.remainingFreeQuestions ?? 0) > 0)
   const isPending = pending !== null
   const mustRetryServerAction = server && retry !== null
   const closeConfirmation = () => setConfirmation(null)
@@ -137,7 +139,7 @@ export const DrawingConversation = ({
       (started) => {
         if (controller.signal.aborted || storageScope !== getMockStorageScope()) return
         if (!server) saveConversation(storageKey, started)
-        else if (started.status === 'support') rememberServerSupportNotice(storageScope, started)
+        else if (started.supportNotice) rememberServerSupportNotice(storageScope, started)
         setConversation(server ? restoreServerSupportNotice(storageScope, started) : started)
       },
       () => {
@@ -403,16 +405,11 @@ export const DrawingConversation = ({
           </div>
 
           <ConversationMessages messages={conversation.messages} ref={messageList}>
-            {conversation.status === 'support' && (
+            {isShowingSupport && (
               <ConversationBubble
                 role="support"
                 text={conversation.supportNotice?.message ?? supportMessage}
               />
-            )}
-            {conversation.supportNotice && /^\+?[\d-]+$/.test(conversation.supportNotice.phone) && (
-              <a className={styles.feedback} href={`tel:${conversation.supportNotice.phone}`}>
-                {conversation.supportNotice.actionLabel}
-              </a>
             )}
             {pendingReply && <ConversationBubble role="user" text={pendingReply} />}
             {pending && (
@@ -437,7 +434,7 @@ export const DrawingConversation = ({
               </div>
             )}
 
-            {conversation.status === 'review' && (
+            {(isShowingSupport || conversation.status === 'review') && (
               <div className={styles.review}>
                 <Button
                   color="gray"
@@ -448,7 +445,7 @@ export const DrawingConversation = ({
                   내 그림 정리하기
                   <FontAwesomeIcon icon={faChevronRight} />
                 </Button>
-                {conversation.canExtend !== false && (
+                {conversation.status === 'review' && conversation.canExtend !== false && (
                   <Button
                     color="gray"
                     disabled={isPending || mustRetryServerAction}
@@ -462,11 +459,13 @@ export const DrawingConversation = ({
                     <FontAwesomeIcon icon={faChevronRight} />
                   </Button>
                 )}
-                <p className={styles.woolBalance} aria-live="polite">
-                  {woolBalance === null
-                    ? '보유 양털을 확인할 수 없어요.'
-                    : `보유 양털 ${woolBalance}개`}
-                </p>
+                {conversation.status === 'review' && (
+                  <p className={styles.woolBalance} aria-live="polite">
+                    {woolBalance === null
+                      ? '보유 양털을 확인할 수 없어요.'
+                      : `보유 양털 ${woolBalance}개`}
+                  </p>
+                )}
                 {woolShortage && (
                   <p className={styles.woolShortage} role="status">
                     양털이 부족해요. ‘내 그림 정리하기’로 대화를 마칠 수 있어요.
@@ -476,7 +475,7 @@ export const DrawingConversation = ({
             )}
           </ConversationMessages>
 
-          {conversation.status !== 'support' && (
+          {(!isShowingSupport || canAnswer) && (
             <div
               className={styles.composer}
               ref={composer}
@@ -525,7 +524,7 @@ export const DrawingConversation = ({
                 onSubmit={(event) => {
                   event.preventDefault()
                   const text = input.trim()
-                  if (text && isAsking) {
+                  if (text && canAnswer) {
                     void runAction({ type: 'ANSWER', text })
                   }
                 }}
@@ -533,10 +532,14 @@ export const DrawingConversation = ({
                 <input
                   aria-label="답변 입력"
                   maxLength={server ? 1000 : undefined}
-                  placeholder="그림에 담긴 이야기를 적어 주세요"
+                  placeholder={
+                    isShowingSupport
+                      ? '그림 이야기를 더 남기고 싶다면 적어 주세요'
+                      : '그림에 담긴 이야기를 적어 주세요'
+                  }
                   value={input}
                   readOnly={isPending || mustRetryServerAction}
-                  disabled={!isAsking}
+                  disabled={!canAnswer}
                   onFocus={() => setShowReplies(false)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && event.nativeEvent.isComposing) {
@@ -552,7 +555,7 @@ export const DrawingConversation = ({
                   type="submit"
                   className={styles.send}
                   aria-label="전송"
-                  disabled={!input.trim() || isPending || mustRetryServerAction || !isAsking}
+                  disabled={!input.trim() || isPending || mustRetryServerAction || !canAnswer}
                 >
                   <FontAwesomeIcon icon={faArrowUp} />
                 </button>

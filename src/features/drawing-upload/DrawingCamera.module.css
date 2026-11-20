@@ -35,6 +35,11 @@
   place-items: center;
 }
 
+.viewfinder.viewfinderUnavailable {
+  aspect-ratio: auto;
+  max-height: none;
+}
+
 .viewfinder video {
   width: 100%;
   height: 100%;
@@ -52,8 +57,12 @@
 
 .error {
   grid-area: 1 / 1;
-  padding: 24px;
+  padding: 16px;
   color: white;
+}
+
+.error p {
+  margin: 0 0 12px;
 }
 
 .retry {

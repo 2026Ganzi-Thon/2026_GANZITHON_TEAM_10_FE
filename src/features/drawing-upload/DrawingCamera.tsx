@@ -122,9 +122,20 @@ export const DrawingCamera = ({
       <div className={styles.content}>
         <h1>그림을 보여주세요</h1>
         <p>완성한 방향 상관 없이 촬영해주세요</p>
-        <div className={styles.viewfinder}>
-          <video ref={videoRef} autoPlay playsInline muted onPlaying={() => setReady(true)} />
-          <p className={styles.caption}>그림 전체가 보이도록 맞춰 주세요</p>
+        <div
+          className={
+            error ? `${styles.viewfinder} ${styles.viewfinderUnavailable}` : styles.viewfinder
+          }
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            hidden={Boolean(error)}
+            onPlaying={() => setReady(true)}
+          />
+          {!error && <p className={styles.caption}>그림 전체가 보이도록 맞춰 주세요</p>}
           {error && (
             <div className={styles.error} role="alert">
               <p>{error}</p>
@@ -143,15 +154,17 @@ export const DrawingCamera = ({
           )}
         </div>
       </div>
-      <div className={styles.actions}>
-        <button
-          className={styles.shutter}
-          type="button"
-          aria-label="사진 촬영"
-          onClick={takePhoto}
-          disabled={!ready}
-        />
-      </div>
+      {!error && (
+        <div className={styles.actions}>
+          <button
+            className={styles.shutter}
+            type="button"
+            aria-label="사진 촬영"
+            onClick={takePhoto}
+            disabled={!ready}
+          />
+        </div>
+      )}
     </div>
   )
 }
