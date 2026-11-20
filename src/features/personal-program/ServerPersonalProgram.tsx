@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft } from '@fortawesome/free-solid-svg-icons'
 import { Button, SheepProfile } from '@/components'
 import { moyangRequest } from '@/lib/moyang-api'
+import { loadScheduledActivityTopics } from './completedActivityTopics'
 import { ProgramProgress, ProgramSchedule, ProgramTimeline } from './ProgramOverview'
 import { ProgramScheduleForm } from './ProgramScheduleForm'
 import { getToday, rounds } from './programSchedule'
@@ -25,6 +26,10 @@ export const ServerPersonalProgram = ({
 }) => {
   const navigate = useNavigate()
   const [shape, setShape] = useState<ServerShape | null>()
+  const [completedTopics, setCompletedTopics] = useState<{
+    shape: ServerShape
+    titles: (string | null)[]
+  }>()
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [editing, setEditing] = useState(false)
@@ -33,6 +38,18 @@ export const ServerPersonalProgram = ({
   const [activityError, setActivityError] = useState('')
   const activityRequest = useRef<AbortController | null>(null)
   const [today] = useProgramToday()
+
+  useEffect(() => {
+    if (!shape?.weekdays.length || shape.completedRounds <= 0) return
+    const controller = new AbortController()
+    void loadScheduledActivityTopics(shape, controller.signal).then(
+      (titles) => {
+        if (!controller.signal.aborted) setCompletedTopics({ shape, titles })
+      },
+      () => {},
+    )
+    return () => controller.abort()
+  }, [shape])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -209,6 +226,9 @@ export const ServerPersonalProgram = ({
               </p>
             </section>
             <ProgramTimeline
+              completedTopics={
+                completedTopics?.shape === shape ? completedTopics.titles : undefined
+              }
               completed={completed}
               activity={null}
               availableRounds={shape.totalRounds}
