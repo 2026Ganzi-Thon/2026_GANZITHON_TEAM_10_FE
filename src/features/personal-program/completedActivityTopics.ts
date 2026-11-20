@@ -3,6 +3,33 @@ import type { RecordItem } from '@/features/records/types'
 import type { ServerShape } from './shapeApi'
 
 type ScheduledActivityTopics = { titles: (string | null)[] } | { updatedShape: ServerShape | null }
+type TopicRecord = Pick<RecordItem, 'recordId' | 'imageUrl'>
+
+export type SavedProgramActivity = { recordId: number; themeCode: string }
+
+const loadDrawingTopic = async (
+  api: ReturnType<typeof moyangRequest>,
+  { recordId, imageUrl }: TopicRecord,
+) => {
+  const drawingId = /^\/api\/drawings\/(\d+)\/image$/.exec(imageUrl ?? '')?.[1]
+  if (!drawingId) return null
+
+  try {
+    const drawing = await api.json<{ recordId: number; topic: { title: string } | null }>(
+      `/api/drawings/${drawingId}`,
+    )
+    return drawing?.recordId === recordId ? drawing.topic?.title?.trim() || null : null
+  } catch {
+    return null
+  }
+}
+
+export const loadSavedActivityRecord = async (recordId: number, signal: AbortSignal) => {
+  const api = moyangRequest(signal)
+  const record = await api.json<TopicRecord>(`/api/records/${recordId}`)
+  if (record?.recordId !== recordId) return null
+  return { recordId, topic: await loadDrawingTopic(api, record) }
+}
 
 export const loadScheduledActivityTopics = async (
   { themeCode, completedRounds, totalRounds }: ServerShape,
@@ -10,7 +37,7 @@ export const loadScheduledActivityTopics = async (
 ): Promise<ScheduledActivityTopics> => {
   const api = moyangRequest(signal)
   const { items, hasNext } = await api.json<{
-    items: Pick<RecordItem, 'recordId' | 'imageUrl'>[]
+    items: TopicRecord[]
     hasNext: boolean
   }>('/api/records', { params: { size: completedRounds } })
 
@@ -32,19 +59,7 @@ export const loadScheduledActivityTopics = async (
     items
       .slice()
       .reverse()
-      .map(async ({ recordId, imageUrl }) => {
-        const drawingId = /^\/api\/drawings\/(\d+)\/image$/.exec(imageUrl ?? '')?.[1]
-        if (!drawingId) return null
-
-        try {
-          const drawing = await api.json<{ recordId: number; topic: { title: string } | null }>(
-            `/api/drawings/${drawingId}`,
-          )
-          return drawing?.recordId === recordId ? drawing.topic?.title?.trim() || null : null
-        } catch {
-          return null
-        }
-      }),
+      .map((item) => loadDrawingTopic(api, item)),
   )
   return { titles }
 }

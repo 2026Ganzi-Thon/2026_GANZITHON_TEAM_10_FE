@@ -4,7 +4,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft } from '@fortawesome/free-solid-svg-icons'
 import { Button, SheepProfile } from '@/components'
 import { moyangRequest } from '@/lib/moyang-api'
-import { loadScheduledActivityTopics } from './completedActivityTopics'
+import { loadSavedActivityRecord, loadScheduledActivityTopics } from './completedActivityTopics'
+import type { SavedProgramActivity } from './completedActivityTopics'
 import { ProgramProgress, ProgramSchedule, ProgramTimeline } from './ProgramOverview'
 import { ProgramScheduleForm } from './ProgramScheduleForm'
 import { getToday, rounds } from './programSchedule'
@@ -17,11 +18,37 @@ import styles from './PersonalProgram.module.css'
 type Topic = { topicId: number; title: string; description: string }
 type Activity = ProgramActivity & { topicId: number }
 
+const CompletedActivityRecordLink = ({ recordId }: { recordId?: number }) => {
+  const [saved, setSaved] = useState<Awaited<ReturnType<typeof loadSavedActivityRecord>>>(null)
+  useEffect(() => {
+    if (recordId === undefined) return
+    const controller = new AbortController()
+    void loadSavedActivityRecord(recordId, controller.signal).then(
+      (record) => {
+        if (!controller.signal.aborted) setSaved(record)
+      },
+      () => {},
+    )
+    return () => controller.abort()
+  }, [recordId])
+
+  return (
+    <div className={styles.topic}>
+      {saved?.topic && <p>저장한 그림 주제 · {saved.topic}</p>}
+      <Link className={styles.textLink} to={saved ? `/records/${saved.recordId}` : '/records'}>
+        기록에서 그림 보기
+      </Link>
+    </div>
+  )
+}
+
 export const ServerPersonalProgram = ({
   reflection,
+  savedActivity,
   scope,
 }: {
   reflection?: FirstReflection
+  savedActivity?: SavedProgramActivity
   scope: string | null
 }) => {
   const navigate = useNavigate()
@@ -40,7 +67,12 @@ export const ServerPersonalProgram = ({
   const [today] = useProgramToday()
 
   useEffect(() => {
-    if (!shape?.weekdays.length || shape.completedRounds <= 0) return
+    if (
+      !shape ||
+      shape.completedRounds <= 0 ||
+      (!shape.weekdays.length && shape.completedRounds < shape.totalRounds)
+    )
+      return
     const controller = new AbortController()
     void loadScheduledActivityTopics(shape, controller.signal).then(
       (result) => {
@@ -51,7 +83,9 @@ export const ServerPersonalProgram = ({
           setCompletedTopics({ shape, titles: result.titles })
         }
       },
-      () => {},
+      () => {
+        if (!controller.signal.aborted) setCompletedTopics({ shape, titles: [] })
+      },
     )
     return () => controller.abort()
   }, [shape])
@@ -130,6 +164,18 @@ export const ServerPersonalProgram = ({
   }
   const days = shape?.weekdays.map((day) => weekdayCodes.indexOf(day)) ?? []
   const completed = Math.min(shape?.completedRounds ?? 0, shape?.totalRounds ?? 0)
+  const titles = completedTopics?.shape === shape ? completedTopics?.titles : undefined
+  const lastSaved = savedActivity ?? {
+    recordId: reflection?.recordId,
+    themeCode: reflection?.concern.id,
+  }
+  const savedRecordId =
+    lastSaved.themeCode === shape?.themeCode &&
+    typeof lastSaved.recordId === 'number' &&
+    Number.isSafeInteger(lastSaved.recordId) &&
+    lastSaved.recordId > 0
+      ? lastSaved.recordId
+      : undefined
   const scheduleComplete = shape?.nextRound === null
   const selectingSchedule = shape && !scheduleComplete && (editing || days.length === 0)
   const canStartToday =
@@ -231,9 +277,7 @@ export const ServerPersonalProgram = ({
               </p>
             </section>
             <ProgramTimeline
-              completedTopics={
-                completedTopics?.shape === shape ? completedTopics.titles : undefined
-              }
+              completedTopics={days.length > 0 ? titles : undefined}
               completed={completed}
               activity={null}
               availableRounds={shape.totalRounds}
@@ -241,6 +285,10 @@ export const ServerPersonalProgram = ({
               firstReflection={reflection}
               concernId={shape.themeCode}
             />
+            {titles !== undefined &&
+              (days.length === 0 || titles.filter(Boolean).length < completed) && (
+                <CompletedActivityRecordLink key={savedRecordId} recordId={savedRecordId} />
+              )}
             {activityError && (
               <p role="alert" className={styles.error}>
                 {activityError}

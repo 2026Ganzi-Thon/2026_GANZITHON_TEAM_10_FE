@@ -8,6 +8,7 @@ import { useModal } from '@/hooks/useModal'
 import { useMockStorageScope } from '@/hooks/useMockStorageScope'
 import { hasMoyangApi } from '@/lib/moyang-api'
 import { ServerPersonalProgram } from './ServerPersonalProgram'
+import type { SavedProgramActivity } from './completedActivityTopics'
 import { getMockStorageScope } from '@/lib/mock-storage'
 import {
   PersonalProgramHomeSection,
@@ -39,6 +40,7 @@ type SessionLocation = {
   firstReflection?: FirstReflection
   programActivity?: ProgramActivityHandoff
   completedRound?: number
+  savedActivity?: SavedProgramActivity
   storageScope?: string
 }
 
@@ -51,11 +53,13 @@ export const PersonalProgramPage = () => {
     (params.has('mock') || params.has('preview') || params.get('view') === 'home')
   if (!hasMoyangApi || preview) return <MockPersonalProgramPage />
   const handoff = location.state as SessionLocation | null
+  const currentHandoff = handoff?.storageScope === storageScope ? handoff : null
   return (
     <ServerPersonalProgram
       key={storageScope}
       scope={storageScope}
-      reflection={handoff?.storageScope === storageScope ? handoff?.firstReflection : undefined}
+      reflection={currentHandoff?.firstReflection}
+      savedActivity={currentHandoff?.savedActivity}
     />
   )
 }
