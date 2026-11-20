@@ -215,7 +215,7 @@ const DrawingFlowScreen = ({ context, step }: { context: ChatStorageContext; ste
           !next.methodSelected
         ) {
           if (!active || getMockStorageScope() !== context.scope) return
-          next = await saveDrawingDraft(context, { methodSelected: true }, next.revision)
+          next = await saveDrawingDraft(context, { methodSelected: true }, next)
         }
         if (active && getMockStorageScope() === context.scope) {
           saved.current = next
@@ -247,8 +247,7 @@ const DrawingFlowScreen = ({ context, step }: { context: ChatStorageContext; ste
           const before = retry ? await readDrawingDraft(context) : previous
           if (!before || before.id !== previous?.id)
             throw new Error('이 화면에서 작성한 그림 초안을 확인하지 못했어요.')
-          const next = await saveDrawingDraft(context, edits, before.revision)
-          if (!Object.hasOwn(edits, 'photo')) next.photo = before.photo
+          const next = await saveDrawingDraft(context, edits, before)
           saved.current = next
           failedPatch.current = {}
           saveFailure.current = false

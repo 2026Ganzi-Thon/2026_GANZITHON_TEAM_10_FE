@@ -694,6 +694,7 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
                 ? '/notifications?preview'
                 : '/notifications'
             }
+            state={{ fromMeetingList: true }}
             aria-label="알림"
             className={styles.notification}
           >

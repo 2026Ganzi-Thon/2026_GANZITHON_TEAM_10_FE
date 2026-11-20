@@ -45,7 +45,7 @@ const icons = {
 /** 알림을 읽음 상태별로 보여준다. 실제 알림 API는 명세 확인 후 연결한다. */
 export const Notifications = () => {
   const navigate = useNavigate()
-  const { search } = useLocation()
+  const { search, state } = useLocation()
   const isPreview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
   const [items, setItems] = useState<Notification[]>(() =>
     isPreview && new URLSearchParams(search).get('preview') !== 'empty' ? previewNotifications : [],
@@ -85,32 +85,37 @@ export const Notifications = () => {
         <PageHeader
           title="알림"
           action="back"
-          onNavigate={() => navigate(isPreview ? '/home?preview' : '/home')}
+          onNavigate={() => {
+            if (state?.fromMeetingList === true && window.history.state?.idx > 0) navigate(-1)
+            else navigate(isPreview ? '/home?preview' : '/home')
+          }}
         />
-        <button
-          className={styles.readAll}
-          type="button"
-          disabled={!isPreview || unread.length === 0}
-          onClick={() => setItems((current) => current.map((item) => ({ ...item, read: true })))}
-        >
-          모두 읽음
-        </button>
+        {isPreview && (
+          <button
+            className={styles.readAll}
+            type="button"
+            disabled={unread.length === 0}
+            onClick={() => setItems((current) => current.map((item) => ({ ...item, read: true })))}
+          >
+            모두 읽음
+          </button>
+        )}
       </div>
       <div className={styles.content}>
-        <div className={styles.filters} aria-label="알림 필터">
-          <button type="button" aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>
-            전체
-          </button>
-          <button type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>
-            읽지 않음
-          </button>
-        </div>
         {!isPreview ? (
           <p className={styles.empty} role="status">
-            알림을 불러올 수 없어요.
+            알림 기능을 준비하고 있어요.
           </p>
         ) : (
           <>
+            <div className={styles.filters} aria-label="알림 필터">
+              <button type="button" aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>
+                전체
+              </button>
+              <button type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>
+                읽지 않음
+              </button>
+            </div>
             {unread.length > 0 && (
               <section className={styles.group}>
                 <h2>새 알림</h2>

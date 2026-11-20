@@ -163,6 +163,7 @@
   width: 100%;
   max-height: 320px;
   object-fit: contain;
+  object-position: center;
   border-radius: 8px;
   background: var(--color-white);
 }
@@ -172,6 +173,7 @@
 }
 .drawingPreview {
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
   width: 100%;
   aspect-ratio: 1;
@@ -181,7 +183,7 @@
 }
 .drawingPreview img {
   height: 100%;
-  max-height: 100%;
+  max-height: none;
 }
 .reminderTimer {
   display: inline-block;
@@ -211,6 +213,9 @@
 }
 .picture p {
   white-space: pre-wrap;
+}
+.serverChat .picture img {
+  max-height: min(320px, 45dvh);
 }
 .pictureTitle {
   margin: 0;
@@ -350,6 +355,51 @@
   min-height: 44px;
   padding: 8px;
   font-size: var(--font-size-caption);
+}
+.serverChat .messageBody {
+  max-width: 100%;
+}
+.phaseNotice,
+.submissionNotice {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px;
+  color: var(--color-primary);
+  font-size: var(--font-size-caption);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.phaseNotice {
+  background: var(--color-surface-green);
+}
+.serverChat .drawingActions {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 22px;
+}
+.serverChat .drawingActions > .drawingTimer {
+  flex: 0 0 100%;
+  margin: 0;
+  text-align: center;
+}
+.serverChat .drawingActions > a {
+  display: grid;
+  flex: 1;
+  min-height: 44px;
+  place-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--color-white);
+  color: var(--color-primary);
+  font-size: var(--font-size-caption);
+  text-align: center;
+}
+.serverChat .endActions {
+  margin-top: 0;
+}
+.serverChat .historyTimer {
+  flex: none;
+  text-align: center;
 }
 .ended .guide {
   margin-bottom: 26px;
