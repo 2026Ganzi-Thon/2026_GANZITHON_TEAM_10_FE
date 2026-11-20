@@ -9,7 +9,7 @@ import { ProgramScheduleForm } from './ProgramScheduleForm'
 import { getToday, rounds } from './programSchedule'
 import type { FirstReflection, ProgramActivity } from './programSchedule'
 import { useProgramToday } from './useProgramToday'
-import { loadServerShape, weekdayCodes } from './shapeApi'
+import { loadOnlyRecordTopic, loadServerShape, weekdayCodes } from './shapeApi'
 import type { ServerShape } from './shapeApi'
 import styles from './PersonalProgram.module.css'
 
@@ -29,6 +29,7 @@ export const ServerPersonalProgram = ({
   const [attempt, setAttempt] = useState(0)
   const [editing, setEditing] = useState(false)
   const [activity, setActivity] = useState<Activity>()
+  const [firstTopic, setFirstTopic] = useState<{ shape: ServerShape; title: string | null }>()
   const [loadingActivity, setLoadingActivity] = useState(false)
   const [activityError, setActivityError] = useState('')
   const activityRequest = useRef<AbortController | null>(null)
@@ -51,6 +52,19 @@ export const ServerPersonalProgram = ({
   }, [attempt, today])
 
   useEffect(() => () => activityRequest.current?.abort(), [])
+
+  useEffect(() => {
+    if (!shape || shape.completedRounds !== 1 || shape.weekdays.length > 0) return
+    const controller = new AbortController()
+    loadOnlyRecordTopic(controller.signal)
+      .then((topic) => {
+        if (!controller.signal.aborted) setFirstTopic({ shape, title: topic })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFirstTopic({ shape, title: null })
+      })
+    return () => controller.abort()
+  }, [shape])
 
   const startActivity = async () => {
     if (!scope || activityRequest.current) return
@@ -216,6 +230,7 @@ export const ServerPersonalProgram = ({
               firstReflection={reflection}
               concernId={shape.themeCode}
               showFirstTopic={false}
+              firstTopic={firstTopic?.shape === shape ? firstTopic.title : null}
             />
             {activityError && (
               <p role="alert" className={styles.error}>

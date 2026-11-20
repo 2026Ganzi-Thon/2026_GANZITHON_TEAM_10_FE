@@ -62,6 +62,7 @@ export const ProgramTimeline = ({
   firstReflection,
   concernId,
   showFirstTopic = true,
+  firstTopic,
 }: {
   completed: number
   activity: ProgramActivity | null
@@ -70,6 +71,7 @@ export const ProgramTimeline = ({
   firstReflection?: FirstReflection
   concernId?: string
   showFirstTopic?: boolean
+  firstTopic?: string | null
 }) => (
   <section
     className={
@@ -102,10 +104,12 @@ export const ProgramTimeline = ({
                   {isComplete ? ' 완료' : isNext ? ' 다음 활동' : ''}
                 </span>
               </p>
-              {((isSetup && index === 0 && showFirstTopic) || isToday) && (
+              {((isSetup && index === 0 && (showFirstTopic || firstTopic)) || isToday) && (
                 <div className={styles.topic}>
-                  <strong>{savedReflection?.title ?? round.topic}</strong>
-                  <p>{savedReflection?.story ?? round.description}</p>
+                  <strong>{firstTopic ?? savedReflection?.title ?? round.topic}</strong>
+                  {(showFirstTopic || isToday) && (
+                    <p>{savedReflection?.story ?? round.description}</p>
+                  )}
                 </div>
               )}
             </div>
