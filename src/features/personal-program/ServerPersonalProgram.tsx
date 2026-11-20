@@ -249,7 +249,13 @@ export const ServerPersonalProgram = ({
         <Link to="/home" aria-label="홈으로 돌아가기">
           <FontAwesomeIcon icon={faArrowLeft} aria-hidden="true" />
         </Link>
-        <span>{days.length ? '나의 모양 이어가기' : '나만의 모양 만들기'}</span>
+        <span>
+          {scheduleComplete
+            ? '나의 모양'
+            : days.length
+              ? '나의 모양 이어가기'
+              : '나만의 모양 만들기'}
+        </span>
       </header>
       <div className={styles.content}>
         <h1 className={styles.headline}>그림으로 이어가는 나의 이야기</h1>
@@ -273,7 +279,7 @@ export const ServerPersonalProgram = ({
           <p role="status">고민을 먼저 선택하면 나의 모양 일정을 정할 수 있어요.</p>
         ) : (
           <>
-            {shape.nextActivityDate && (
+            {days.length > 0 && (shape.nextActivityDate || scheduleComplete) && (
               <ProgramSchedule days={days} date={shape.nextActivityDate} />
             )}
             <section className={styles.overview} aria-label="모양 진행 현황">
@@ -284,7 +290,7 @@ export const ServerPersonalProgram = ({
               <ProgramProgress completed={completed} />
               <p className={styles.status}>
                 {scheduleComplete
-                  ? '현재 제공되는 활동을 모두 마쳤어요.'
+                  ? `현재 제공되는 활동 ${shape.totalRounds}회를 모두 마쳤어요. 예정된 다음 활동이 없어요.`
                   : shape.nextActivityDate
                     ? '예정일을 놓쳐도 다음 선택 요일에 이어갈 수 있어요.'
                     : '활동할 요일을 선택해 주세요.'}
@@ -295,7 +301,7 @@ export const ServerPersonalProgram = ({
               completed={completed}
               activity={null}
               availableRounds={shape.totalRounds}
-              isSetup={days.length === 0}
+              isSetup={!scheduleComplete && days.length === 0}
               firstReflection={reflection}
               concernId={shape.themeCode}
               showFirstTopic={false}

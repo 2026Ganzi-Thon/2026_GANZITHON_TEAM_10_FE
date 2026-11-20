@@ -33,7 +33,7 @@ export const ProgramProgress = ({
   </div>
 )
 
-export const ProgramSchedule = ({ days, date }: { days: number[]; date: string }) => (
+export const ProgramSchedule = ({ days, date }: { days: number[]; date: string | null }) => (
   <div className={styles.schedule}>
     <p className={styles.scheduleTitle}>
       <FontAwesomeIcon icon={faCalendarDays} aria-hidden="true" />
@@ -44,12 +44,14 @@ export const ProgramSchedule = ({ days, date }: { days: number[]; date: string }
         <dt>활동 요일</dt>
         <dd>{formatWeekdays(days)}</dd>
       </div>
-      <div>
-        <dt>다음 미술 활동</dt>
-        <dd>
-          <time dateTime={date}>{formatActivityDate(date)}</time>
-        </dd>
-      </div>
+      {date && (
+        <div>
+          <dt>다음 미술 활동</dt>
+          <dd>
+            <time dateTime={date}>{formatActivityDate(date)}</time>
+          </dd>
+        </div>
+      )}
     </dl>
   </div>
 )
@@ -80,13 +82,16 @@ export const ProgramTimeline = ({
       isSetup ? styles.timelineSection : `${styles.timelineSection} ${styles.continueTimeline}`
     }
   >
-    <h2>{isSetup ? '미술 활동 단계' : '이런 활동을 진행할 예정이에요'}</h2>
+    <h2>
+      {isSetup || completed >= availableRounds ? '미술 활동 단계' : '이런 활동을 진행할 예정이에요'}
+    </h2>
     {isSetup && <p>각 미술 활동의 구체적인 그림 주제는 활동 당일에 공개돼요.</p>}
     <ol className={isSetup ? styles.setupTimeline : styles.timeline}>
       {getProgramRounds(concernId ?? firstReflection?.concern.id).map((round, index) => {
         const isComplete = index < completed
         const completedTopic = isComplete ? completedTopics?.[index] : null
-        const isNext = index === completed && index < availableRounds
+        const isAvailable = index < availableRounds
+        const isNext = index === completed && isAvailable
         const isToday = activity?.round === index + 1
         const savedReflection = isSetup && index === 0 ? firstReflection : undefined
         return (
@@ -107,6 +112,7 @@ export const ProgramTimeline = ({
                   {isComplete ? ' 완료' : isNext ? ' 다음 활동' : ''}
                 </span>
               </p>
+              {!isAvailable && <p className={styles.stepAvailability}>현재 제공되지 않아요</p>}
               {((isSetup && index === 0 && (showFirstTopic || firstTopic)) || isToday) && (
                 <div className={styles.topic}>
                   <strong>{firstTopic ?? savedReflection?.title ?? round.topic}</strong>

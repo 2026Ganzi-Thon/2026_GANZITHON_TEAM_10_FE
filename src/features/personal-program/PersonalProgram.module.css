@@ -242,6 +242,11 @@
   font-weight: 600;
 }
 
+.stepAvailability {
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+}
+
 .topic {
   margin-top: 8px;
   color: var(--color-black);
@@ -384,6 +389,10 @@
   gap: 12px;
   font-size: var(--font-size-caption);
   line-height: 1.4;
+}
+
+.schedule dl > :only-child {
+  grid-column: 1 / -1;
 }
 
 .schedule dt {

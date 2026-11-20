@@ -122,6 +122,7 @@ export const DrawingConversation = ({
   const messageCount = conversation?.messages.length ?? 0
   const isPending = pending !== null
   const mustRetryServerAction = server && retry !== null
+  const endDisabled = isPending || (server && retry?.type === 'END')
   const closeConfirmation = () => setConfirmation(null)
 
   useEffect(() => {
@@ -233,7 +234,8 @@ export const DrawingConversation = ({
 
   const runAction = async (action: ConversationAction) => {
     if (!conversation || request.current || storageScope !== getMockStorageScope()) return
-    if (mustRetryServerAction && action !== retry) return
+    const isEnd = action.type === 'END'
+    if (mustRetryServerAction && action !== retry && (!isEnd || retry.type === 'END')) return
 
     const controller = new AbortController()
     const { signal } = controller
@@ -244,7 +246,6 @@ export const DrawingConversation = ({
     setWoolShortage(false)
     setShowReplies(false)
 
-    const isEnd = action.type === 'END'
     const fail = !mockFailed.current && scenario === (isEnd ? 'end-error' : 'reply-error')
 
     try {
@@ -359,7 +360,7 @@ export const DrawingConversation = ({
           <button
             className={styles.end}
             type="button"
-            disabled={isPending || mustRetryServerAction}
+            disabled={endDisabled}
             aria-haspopup="dialog"
             onClick={() => setConfirmation('end')}
           >
@@ -467,7 +468,7 @@ export const DrawingConversation = ({
               <div className={styles.review}>
                 <Button
                   color="gray"
-                  disabled={isPending || mustRetryServerAction}
+                  disabled={endDisabled}
                   onClick={() => void runAction({ type: 'END' })}
                 >
                   <FontAwesomeIcon icon={faClipboard} />

@@ -248,8 +248,10 @@ export const DrawingResult = ({
   const blocker = useBlocker(({ currentLocation, nextLocation, historyAction }) => {
     const sameResult =
       currentLocation.pathname === nextLocation.pathname &&
-      (currentLocation.state?.resultKey ?? currentLocation.key) ===
-        (nextLocation.state?.resultKey ?? nextLocation.key)
+      currentLocation.search === nextLocation.search &&
+      (serverId !== undefined ||
+        (currentLocation.state?.resultKey ?? currentLocation.key) ===
+          (nextLocation.state?.resultKey ?? nextLocation.key))
     if (!source || historyAction !== 'POP' || sameResult || (recordSaved && !isSaving && !reward)) {
       return false
     }
