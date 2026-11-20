@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -16,7 +16,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { HomeLayout, Modal, SheepProfile } from '@/components'
-import { apiClient, getAccessToken, setAccessToken } from '@/lib/api-client'
+import { apiClient, logout } from '@/lib/api-client'
 import { readPreviewColor, readSheepColor } from '@/features/profile'
 import { readPreviewPlan } from '@/features/plans'
 import styles from './MyPage.module.css'
@@ -69,23 +69,28 @@ export const MyPage = () => {
   const navigate = useNavigate()
   const preview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
   const [balance, setBalance] = useState<number | null>(null)
+  const [userId, setUserId] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
   const [retry, setRetry] = useState(0)
   const [withdrawOpen, setWithdrawOpen] = useState(false)
-  const [withdrawing, setWithdrawing] = useState(false)
-  const [withdrawError, setWithdrawError] = useState('')
-
-  const active = useRef(true)
-  useEffect(() => {
-    active.current = true
-    return () => {
-      active.current = false
-    }
-  }, [])
 
   useEffect(() => {
     if (preview) return
     const controller = new AbortController()
+    apiClient
+      .get<{ success: boolean; data: { userId: number } | null }>('/api/users/me', {
+        signal: controller.signal,
+      })
+      .then(({ data }) => {
+        if (
+          data.success &&
+          data.data &&
+          Number.isSafeInteger(data.data.userId) &&
+          data.data.userId > 0
+        )
+          setUserId(data.data.userId)
+      })
+      .catch(() => {})
     apiClient
       .get<{ success: boolean; data: { balance: number } | null }>('/api/sheep', {
         signal: controller.signal,
@@ -102,30 +107,12 @@ export const MyPage = () => {
     return () => controller.abort()
   }, [preview, retry])
 
-  const logout = () => {
+  const handleLogout = () => {
     if (!window.confirm('로그아웃 하시겠어요?')) return
-    if (!preview) setAccessToken(null)
-    navigate('/onboarding')
-  }
-  const withdraw = async () => {
-    const token = getAccessToken()
-    setWithdrawing(true)
-    setWithdrawError('')
-    try {
-      if (!preview) {
-        const response = await apiClient.delete<{ success: boolean }>('/api/users/me')
-        if (response.data && !response.data.success) throw new Error('Withdrawal failed')
-        if (getAccessToken() !== token) return
-        setAccessToken(null)
-      }
-      if (!active.current) return
-      setWithdrawOpen(false)
-      navigate('/onboarding', { replace: true })
-    } catch {
-      if (active.current && (preview || getAccessToken() === token))
-        setWithdrawError('회원 탈퇴를 처리하지 못했어요. 다시 시도해 주세요.')
-    } finally {
-      if (active.current) setWithdrawing(false)
+    if (preview) navigate('/onboarding', { replace: true })
+    else {
+      logout()
+      window.location.replace('/onboarding')
     }
   }
   const suffix = preview ? '?preview' : ''
@@ -148,7 +135,10 @@ export const MyPage = () => {
           </div>
           <div className={styles.avatar}>
             <div className={styles.avatarImage}>
-              <SheepProfile color={preview ? readPreviewColor() : readSheepColor()} size={95} />
+              <SheepProfile
+                color={preview ? readPreviewColor() : readSheepColor(userId)}
+                size={95}
+              />
             </div>
           </div>
           <div className={styles.stat}>
@@ -214,14 +204,11 @@ export const MyPage = () => {
           />
           <Menu
             items={[
-              { label: '로그아웃', icon: faLock, action: logout },
+              { label: '로그아웃', icon: faLock, action: handleLogout },
               {
                 label: '회원 탈퇴',
                 icon: faRightFromBracket,
-                action: () => {
-                  setWithdrawError('')
-                  setWithdrawOpen(true)
-                },
+                action: () => setWithdrawOpen(true),
               },
             ]}
           />
@@ -229,26 +216,11 @@ export const MyPage = () => {
       </main>
       <Modal
         isOpen={withdrawOpen}
-        onClose={() => {
-          if (!withdrawing) setWithdrawOpen(false)
-        }}
+        onClose={() => setWithdrawOpen(false)}
         title="회원 탈퇴"
-        actions={[
-          {
-            label: '취소',
-            color: 'gray',
-            onClick: () => setWithdrawOpen(false),
-            disabled: withdrawing,
-          },
-          {
-            label: withdrawing ? '처리 중...' : '탈퇴하기',
-            onClick: withdraw,
-            disabled: withdrawing,
-          },
-        ]}
+        actions={[{ label: '확인', onClick: () => setWithdrawOpen(false) }]}
       >
-        <p>탈퇴하면 계정과 그림, 대화, 기록, 양털이 함께 삭제돼요. 계속하시겠어요?</p>
-        {withdrawError && <p role="alert">{withdrawError}</p>}
+        <p>회원 탈퇴 기능을 준비하고 있어요.</p>
       </Modal>
     </HomeLayout>
   )

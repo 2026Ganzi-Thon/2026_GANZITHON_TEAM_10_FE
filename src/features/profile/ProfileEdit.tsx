@@ -30,9 +30,8 @@ export const ProfileEdit = () => {
   const navigate = useNavigate()
   const preview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
   const [nickname, setNickname] = useState(() => (preview ? readPreviewNickname() : ''))
-  const [color, setColor] = useState<SheepColor>(() =>
-    preview ? readPreviewColor() : readSheepColor(),
-  )
+  const [color, setColor] = useState<SheepColor>(() => (preview ? readPreviewColor() : 'green'))
+  const [userId, setUserId] = useState<number | null>(null)
   const [colorError, setColorError] = useState('')
   const [balance, setBalance] = useState<number | null>(preview ? 2 : null)
   const [loading, setLoading] = useState(!preview)
@@ -54,11 +53,17 @@ export const ProfileEdit = () => {
     if (preview) return
     const controller = new AbortController()
     apiClient
-      .get<Response<{ nickname: string }>>('/api/users/me', { signal: controller.signal })
+      .get<Response<{ nickname: string; userId: number }>>('/api/users/me', {
+        signal: controller.signal,
+      })
       .then(({ data }) => {
         if (!data.success || typeof data.data?.nickname !== 'string')
           throw new Error('Invalid response')
         setNickname(data.data.nickname)
+        if (Number.isSafeInteger(data.data.userId) && data.data.userId > 0) {
+          setUserId(data.data.userId)
+          setColor(readSheepColor(data.data.userId))
+        }
         setError('')
         setLoading(false)
       })
@@ -113,8 +118,8 @@ export const ProfileEdit = () => {
   const choose = (next: SheepColor) => {
     if (preview) {
       writePreviewValue('sheepColor', next)
-    } else if (!writeSheepColor(next)) {
-      setColorError('색상을 저장하지 못했어요. 브라우저 저장소를 확인해 주세요.')
+    } else if (!writeSheepColor(userId, next)) {
+      setColorError('색상을 저장하지 못했어요. 로그인 상태와 브라우저 저장소를 확인해 주세요.')
       return
     }
     setColor(next)

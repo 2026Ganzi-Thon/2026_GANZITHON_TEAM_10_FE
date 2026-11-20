@@ -1,19 +1,22 @@
 export const colors = ['white', 'pink', 'green', 'purple', 'blue'] as const
 export type SheepColor = (typeof colors)[number]
 
-/** 서버 색상 저장 기능이 준비될 때까지 이 브라우저에 선택을 보관한다. */
-export const readSheepColor = (): SheepColor => {
+const sheepColorKey = (userId: number) => `moyang.sheepColor:user:${userId}`
+
+/** 선택한 색상은 이 브라우저에 계정별로 보관한다. */
+export const readSheepColor = (userId: number | null): SheepColor => {
   try {
-    const value = localStorage.getItem('moyang.sheepColor')
+    const value = userId !== null ? localStorage.getItem(sheepColorKey(userId)) : null
     return colors.find((color) => color === value) ?? 'green'
   } catch {
     return 'green'
   }
 }
 
-export const writeSheepColor = (color: SheepColor): boolean => {
+export const writeSheepColor = (userId: number | null, color: SheepColor): boolean => {
   try {
-    localStorage.setItem('moyang.sheepColor', color)
+    if (userId === null) return false
+    localStorage.setItem(sheepColorKey(userId), color)
     return true
   } catch {
     return false
