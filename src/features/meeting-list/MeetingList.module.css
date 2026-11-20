@@ -25,11 +25,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-}
-
-.notification img {
-  width: 20px;
-  height: auto;
+  color: inherit;
 }
 
 .header h1 {
@@ -80,6 +76,11 @@
   padding: 4px var(--meeting-gutter) 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.filters::-webkit-scrollbar {
+  display: none;
 }
 
 .filters button {
@@ -503,6 +504,7 @@
 }
 
 .tabs a:focus-visible,
+.notification:focus-visible,
 .filters button:focus-visible,
 .enter:focus-visible,
 .reentry:focus-visible,

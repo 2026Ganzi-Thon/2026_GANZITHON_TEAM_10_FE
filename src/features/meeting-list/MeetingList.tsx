@@ -11,6 +11,8 @@ import {
   useSearchParams,
 } from 'react-router-dom'
 import { Button, Modal } from '@/components'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faBell } from '@fortawesome/free-solid-svg-icons'
 import { scheduledStartGrace } from '@/features/meeting-reservation/reservationMock'
 import { applyWaitingRoomStatuses } from '@/features/meeting-waiting-room/waitingRoomMock'
 import { applyMeetingChatHistory } from '@/features/meeting-chat/chatHistory'
@@ -21,7 +23,6 @@ import attendeesSmallIcon from '@/assets/meetings/attendees-small.svg'
 import calendarIcon from '@/assets/meetings/calendar.svg'
 import chevronIcon from '@/assets/meetings/chevron.svg'
 import divider from '@/assets/meetings/divider.svg'
-import notificationIcon from '@/assets/meetings/notification.svg'
 import pastChevron from '@/assets/meetings/past-chevron.svg'
 import plusIcon from '@/assets/meetings/plus.svg'
 import reenterIcon from '@/assets/meetings/reenter.svg'
@@ -687,9 +688,17 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
     <div className={styles.page} data-tab={tab} ref={pageRef} onClickCapture={rememberMeeting}>
       <header className={styles.header}>
         <div className={styles.headerAction}>
-          <button type="button" disabled aria-label="알림 준비 중" className={styles.notification}>
-            <img src={notificationIcon} alt="" />
-          </button>
+          <Link
+            to={
+              import.meta.env.DEV && searchParams.has('preview')
+                ? '/notifications?preview'
+                : '/notifications'
+            }
+            aria-label="알림"
+            className={styles.notification}
+          >
+            <FontAwesomeIcon icon={faBell} />
+          </Link>
         </div>
         <h1>
           비슷한 고민을 가진
