@@ -38,7 +38,7 @@ export const Records = () => {
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null)
   const [calendar, setCalendar] = useState<RecordItem[] | null>(null)
   const [recent, setRecent] = useState<RecordItem[] | null>(null)
-  const [cursor, setCursor] = useState<string | null>(null)
+  const [cursor, setCursor] = useState<number | null>(null)
   const [hasNext, setHasNext] = useState(false)
   const [calendarError, setCalendarError] = useState(false)
   const [error, setError] = useState<'' | 'recent' | 'more'>('')
@@ -74,7 +74,7 @@ export const Records = () => {
     if (preview || tab !== 'recent') return
     const controller = new AbortController()
     apiClient
-      .get<Response<{ items: RecordItem[]; hasNext: boolean; nextCursor: string | null }>>(
+      .get<Response<{ items: RecordItem[]; hasNext: boolean; nextCursor: number | null }>>(
         '/api/records',
         { params: { size: 20 }, signal: controller.signal },
       )
@@ -110,12 +110,12 @@ export const Records = () => {
     setMonth(new Date(month.getFullYear(), month.getMonth() + amount, 1))
   }
   const more = async () => {
-    if (!cursor || loadingMore) return
+    if (cursor === null || loadingMore) return
     setLoadingMore(true)
     setError('')
     try {
       const { data } = await apiClient.get<
-        Response<{ items: RecordItem[]; hasNext: boolean; nextCursor: string | null }>
+        Response<{ items: RecordItem[]; hasNext: boolean; nextCursor: number | null }>
       >('/api/records', { params: { cursor, size: 20 } })
       if (!data.success || !data.data || !Array.isArray(data.data.items))
         throw new Error('Invalid response')

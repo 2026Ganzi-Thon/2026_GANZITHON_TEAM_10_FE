@@ -39,6 +39,39 @@ export const setAccessToken = (token: string | null) => {
   }
 }
 
+const clearMoyangStorage = (storage: Storage) => {
+  for (let index = storage.length - 1; index >= 0; index -= 1) {
+    const key = storage.key(index)
+    if (
+      key &&
+      !key.startsWith('moyang.sheepColor:user:') &&
+      (key.startsWith('moyang.') || key.startsWith('moyang:'))
+    )
+      storage.removeItem(key)
+  }
+}
+
+/** 로그아웃 시 계정별 색상을 제외한 브라우저 데이터를 지운다. */
+export const logout = () => {
+  setAccessToken(null)
+  try {
+    clearMoyangStorage(localStorage)
+    clearMoyangStorage(sessionStorage)
+  } catch {
+    // 저장소에 접근할 수 없더라도 메모리의 인증 정보는 지운다.
+  }
+}
+
+window.addEventListener('storage', (event) => {
+  if (event.key !== tokenKey || event.oldValue === event.newValue) return
+  try {
+    clearMoyangStorage(sessionStorage)
+  } catch {
+    // 저장소에 접근할 수 없어도 화면은 초기화한다.
+  }
+  window.location.replace('/onboarding')
+})
+
 try {
   const token = getAccessToken()
   if (token) apiClient.defaults.headers.common.Authorization = `Bearer ${token}`
