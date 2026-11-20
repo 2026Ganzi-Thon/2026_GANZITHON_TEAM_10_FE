@@ -43,8 +43,13 @@ export const ServerPersonalProgram = ({
     if (!shape?.weekdays.length || shape.completedRounds <= 0) return
     const controller = new AbortController()
     void loadScheduledActivityTopics(shape, controller.signal).then(
-      (titles) => {
-        if (!controller.signal.aborted) setCompletedTopics({ shape, titles })
+      (result) => {
+        if (controller.signal.aborted) return
+        if ('updatedShape' in result) {
+          setShape((current) => (current === shape ? result.updatedShape : current))
+        } else {
+          setCompletedTopics({ shape, titles: result.titles })
+        }
       },
       () => {},
     )
