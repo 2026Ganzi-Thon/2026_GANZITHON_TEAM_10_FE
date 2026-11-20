@@ -31,6 +31,7 @@ type ConversationMessagesProps = {
   messages: Conversation['messages']
   ref?: Ref<HTMLDivElement>
   readOnly?: boolean
+  scrollWithPage?: boolean
   children?: ReactNode
 }
 
@@ -38,10 +39,11 @@ export const ConversationMessages = ({
   messages,
   ref,
   readOnly,
+  scrollWithPage,
   children,
 }: ConversationMessagesProps) => (
   <div
-    className={styles.messages}
+    className={scrollWithPage ? `${styles.messages} ${styles.scrollWithPage}` : styles.messages}
     ref={ref}
     role={readOnly ? 'region' : 'log'}
     aria-label="그림 대화"

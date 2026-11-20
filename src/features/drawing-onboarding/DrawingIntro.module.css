@@ -23,3 +23,28 @@
   width: min(256px, calc(100% - 48px));
   transform: translateX(-50%);
 }
+
+@media (max-height: 700px) {
+  .page {
+    display: flex;
+    height: auto;
+    min-height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding-block: 24px;
+  }
+
+  .illustration,
+  .actions {
+    position: static;
+    transform: none;
+  }
+
+  .illustration {
+    width: min(240px, calc(100% - 48px));
+    max-height: 50dvh;
+    object-fit: contain;
+  }
+}

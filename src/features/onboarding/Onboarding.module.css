@@ -184,6 +184,35 @@
     bottom: 20px;
   }
 }
+
+@media (max-height: 700px) {
+  .container {
+    min-height: 0;
+  }
+
+  .intro {
+    height: 100%;
+    min-height: 460px;
+  }
+
+  .art {
+    top: 12%;
+    height: 41%;
+  }
+
+  .copy {
+    top: 57%;
+  }
+
+  .copy p {
+    margin-top: 8px;
+  }
+
+  .actions {
+    bottom: 12px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .splash {
     transition-duration: 1ms;

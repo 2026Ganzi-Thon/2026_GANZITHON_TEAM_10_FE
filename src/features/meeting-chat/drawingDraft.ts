@@ -17,10 +17,16 @@ export type DrawingDraftPatch = Partial<
   Pick<MeetingDrawingDraft, 'photo' | 'paths' | 'inputType' | 'methodSelected'>
 > & { fields?: Partial<MeetingDrawingDraft['fields']> }
 
+type StoredPhoto = { type: string; size: number }
+type StoredDraft = Omit<MeetingDrawingDraft, 'photo'> & { photo: Blob | StoredPhoto | null }
+type StoredEntry = { draft: StoredDraft; bytes?: ArrayBuffer }
+
 const databaseName = 'moyang:meeting-drawings'
 const storeName = 'drafts'
 const keyFor = ({ scope, meetingId, scenario = null, server }: ChatStorageContext) =>
   JSON.stringify([scope, meetingId, server ? 'server' : scenario])
+const photoKeyFor = (key: string) => [key, 'photo']
+const invalidDraft = '그림 초안을 확인할 수 없어요. 기존 자료는 보관했어요.'
 
 export const openDrawingDraftChannel = (context: ChatStorageContext) => {
   if (typeof BroadcastChannel === 'undefined') return null
@@ -35,7 +41,7 @@ const assertScope = (scope: string) => {
   if (!scope || scope !== getMockStorageScope()) throw new Error('로그인 정보가 변경됐어요.')
 }
 
-const validateDraft = (value: MeetingDrawingDraft) => {
+const validateDraft = (value: StoredDraft) => {
   if (
     !value ||
     value.version !== 1 ||
@@ -46,8 +52,10 @@ const validateDraft = (value: MeetingDrawingDraft) => {
     !(value.methodSelected === undefined || typeof value.methodSelected === 'boolean') ||
     !(
       value.photo === null ||
-      (value.photo instanceof Blob &&
+      (value.photo &&
+        typeof value.photo === 'object' &&
         ['image/png', 'image/jpeg'].includes(value.photo.type) &&
+        Number.isSafeInteger(value.photo.size) &&
         value.photo.size > 0 &&
         value.photo.size <= 10 * 1024 * 1024)
     ) ||
@@ -69,7 +77,7 @@ const validateDraft = (value: MeetingDrawingDraft) => {
         item.paths.every((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y)),
     )
   )
-    throw new Error('그림 초안을 확인할 수 없어요. 기존 자료는 보관했어요.')
+    throw new Error(invalidDraft)
   return value
 }
 
@@ -97,15 +105,48 @@ export const readDrawingDraft = async (context: ChatStorageContext) => {
   const database = await openDatabase()
   try {
     assertScope(context.scope)
-    const saved = await new Promise<MeetingDrawingDraft | null>((resolve, reject) => {
+    const key = keyFor(context)
+    const saved = await new Promise<StoredEntry | null>((resolve, reject) => {
       const transaction = database.transaction(storeName, 'readonly')
-      const request = transaction.objectStore(storeName).get(keyFor(context))
-      transaction.oncomplete = () => resolve(request.result ?? null)
+      const store = transaction.objectStore(storeName)
+      const request = store.get(key)
+      let entry: StoredEntry | null = null
+      request.onsuccess = () => {
+        if (request.result === undefined || request.result === null) return
+        try {
+          const draft = validateDraft(request.result)
+          const saved: StoredEntry = { draft }
+          entry = saved
+          if (draft.photo && !(draft.photo instanceof Blob)) {
+            const photoRequest = store.get(photoKeyFor(key))
+            photoRequest.onsuccess = () => {
+              saved.bytes = photoRequest.result
+            }
+          }
+        } catch (error) {
+          reject(error)
+          transaction.abort()
+        }
+      }
+      transaction.oncomplete = () => resolve(entry)
       transaction.onabort = () => reject(new Error('그림 초안을 불러오지 못했어요.'))
       transaction.onerror = () => reject(new Error('그림 초안을 불러오지 못했어요.'))
     })
+    if (!saved) {
+      assertScope(context.scope)
+      return null
+    }
+    const { photo } = saved.draft
+    let image: Blob | null = null
+    if (photo) {
+      // IndexedDB에서 복원한 Blob은 WebKit에서 multipart 업로드에 바로 쓸 수 없다.
+      const bytes = photo instanceof Blob ? await photo.arrayBuffer() : saved.bytes
+      if (!(bytes instanceof ArrayBuffer) || bytes.byteLength !== photo.size)
+        throw new Error(invalidDraft)
+      image = new Blob([bytes], { type: photo.type })
+    }
     assertScope(context.scope)
-    return saved === null ? null : validateDraft(saved)
+    return { ...saved.draft, photo: image }
   } finally {
     database.close()
   }
@@ -128,39 +169,46 @@ export const assertCurrentDrawing = async (
 
 const saveDraft = async (
   context: ChatStorageContext,
-  patch: DrawingDraftPatch,
-  expectedRevision: number | null,
+  { photo, ...patch }: DrawingDraftPatch,
+  expected: MeetingDrawingDraft | null,
 ) => {
   assertScope(context.scope)
+  const bytes = photo ? await photo.arrayBuffer() : null
   const database = await openDatabase()
   try {
     assertScope(context.scope)
+    const key = keyFor(context)
     const saved = await new Promise<MeetingDrawingDraft>((resolve, reject) => {
       const transaction = database.transaction(storeName, 'readwrite')
       const store = transaction.objectStore(storeName)
-      const request = store.get(keyFor(context))
+      const request = store.get(key)
       let result: MeetingDrawingDraft
       let failure = '그림 초안을 저장하지 못했어요. 현재 화면에서 다시 시도해 주세요.'
       request.onsuccess = () => {
         try {
           assertScope(context.scope)
-          const previous: MeetingDrawingDraft | null = request.result
-            ? validateDraft(request.result)
-            : null
-          if ((previous?.revision ?? null) !== expectedRevision)
+          const previous: StoredDraft | null = request.result ? validateDraft(request.result) : null
+          if (previous?.id !== expected?.id || previous?.revision !== expected?.revision)
             throw new Error('다른 화면에서 이 그림이 변경됐어요. 현재 입력 내용을 확인해 주세요.')
-          result = validateDraft({
+          const next = validateDraft({
             version: 1,
             id: previous?.id ?? crypto.randomUUID(),
-            photo: null,
             paths: [],
             inputType: 'UPLOAD',
             ...previous,
             ...patch,
+            photo:
+              photo === undefined
+                ? (previous?.photo ?? null)
+                : photo && { type: photo.type, size: photo.size },
             fields: { title: '', note: '', ...previous?.fields, ...patch.fields },
             revision: (previous?.revision ?? -1) + 1,
           })
-          store.put(result, keyFor(context))
+          // 그림 바이트를 따로 저장해 제목이나 설명만 바꿀 때 다시 쓰지 않는다.
+          if (bytes) store.put(bytes, photoKeyFor(key))
+          else if (photo === null) store.delete(photoKeyFor(key))
+          store.put(next, key)
+          result = { ...next, photo: photo === undefined ? (expected?.photo ?? null) : photo }
         } catch (error) {
           if (error instanceof DOMException && error.name === 'QuotaExceededError')
             failure = '그림 저장 공간이 부족해요. 입력 내용은 현재 화면에 남아 있어요.'
@@ -189,7 +237,7 @@ const saveDraft = async (
 export const saveDrawingDraft = async (
   context: ChatStorageContext,
   patch: DrawingDraftPatch,
-  expectedRevision: number | null,
+  expected: MeetingDrawingDraft | null,
 ) => {
   if (!navigator.locks)
     throw new Error('그림을 안전하게 저장할 수 없어요. 다른 브라우저에서 다시 시도해 주세요.')
@@ -207,7 +255,7 @@ export const saveDrawingDraft = async (
     ) {
       throw new Error('이미 공유했거나 그림 그리기 단계가 끝났어요. 원본 그림은 보관돼요.')
     }
-    return saveDraft(context, patch, expectedRevision)
+    return saveDraft(context, patch, expected)
   })
   if (patch.methodSelected || Object.hasOwn(patch, 'photo')) {
     const channel = openDrawingDraftChannel(context)

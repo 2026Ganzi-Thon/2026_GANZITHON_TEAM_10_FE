@@ -280,7 +280,10 @@ export const Home = () => {
                 <section className={styles.card}>
                   <div className={styles.cardHeader}>
                     <h2>최근 나의 그림</h2>
-                    <Link to={`/records/${record.data.recordId}${preview ? '?preview' : ''}`}>
+                    <Link
+                      to={`/records/${record.data.recordId}${preview ? '?preview' : ''}`}
+                      state={{ from: 'home' }}
+                    >
                       다시 살펴보기 <FontAwesomeIcon icon={faChevronRight} />
                     </Link>
                   </div>

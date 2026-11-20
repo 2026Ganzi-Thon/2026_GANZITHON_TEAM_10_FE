@@ -1,12 +1,9 @@
 import { createBrowserRouter, matchRoutes, redirect } from 'react-router-dom'
+import type { LoaderFunctionArgs } from 'react-router-dom'
 import { RootLayout } from '@/components'
 import { LoginPage } from '@/pages/LoginPage'
 import { StartPage } from '@/pages/StartPage'
 import { OnboardingProfilePage } from '@/pages/OnboardingProfilePage'
-import { OnboardingLifestylePage } from '@/pages/OnboardingLifestylePage'
-import { OnboardingConcernsPage } from '@/pages/OnboardingConcernsPage'
-import { OnboardingEmotionsPage } from '@/pages/OnboardingEmotionsPage'
-import { OnboardingStoryPage } from '@/pages/OnboardingStoryPage'
 import { HomePage } from '@/pages/HomePage'
 import { AboutPage } from '@/pages/AboutPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
@@ -91,10 +88,14 @@ export const router = createBrowserRouter([
             : redirect('/onboarding'),
         element: <OnboardingProfilePage />,
       },
-      { path: '/onboarding/lifestyle', element: <OnboardingLifestylePage /> },
-      { path: '/onboarding/concerns', element: <OnboardingConcernsPage /> },
-      { path: '/onboarding/emotions', element: <OnboardingEmotionsPage /> },
-      { path: '/onboarding/story', element: <OnboardingStoryPage /> },
+      ...['lifestyle', 'concerns', 'emotions', 'story'].map((section, index) => ({
+        path: `/onboarding/${section}`,
+        loader: ({ request }: LoaderFunctionArgs) => {
+          const params = new URL(request.url).searchParams
+          params.set('page', String(index + 2))
+          return redirect(`/onboarding/profile?${params}`)
+        },
+      })),
       { path: '/home', element: <HomePage /> },
       { path: '/about', element: <AboutPage /> },
       { path: '/notifications', element: <NotificationsPage /> },

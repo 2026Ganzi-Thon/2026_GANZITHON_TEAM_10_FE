@@ -1,4 +1,6 @@
 .page {
+  --camera-page-height: 100dvh;
+
   display: flex;
   flex-direction: column;
   min-height: 100%;
@@ -89,4 +91,33 @@
 .shutter:focus-visible {
   outline: 3px solid var(--color-black);
   outline-offset: 3px;
+}
+
+@media (min-width: 481px) {
+  .page {
+    --camera-page-height: var(--desktop-frame-height);
+  }
+}
+
+@media (max-height: 700px) {
+  .content {
+    padding-block: 12px;
+  }
+
+  .content h1 {
+    margin-bottom: 8px;
+    font-size: 24px;
+  }
+
+  .content > p {
+    margin-bottom: 12px;
+  }
+
+  .viewfinder {
+    max-height: max(80px, calc(var(--camera-page-height) - 260px));
+  }
+
+  .actions {
+    padding-block: 12px 22px;
+  }
 }

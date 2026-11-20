@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faArrowUp } from '@fortawesome/free-solid-svg-icons'
 import { Button, Modal, PageHeader } from '@/components'
 import { DrawingImage } from '@/features/drawing-conversation/DrawingImage'
 import {
@@ -17,6 +19,7 @@ import { pastConversationDuration } from '@/features/meeting-list/meetingMock'
 import { readServerPastMeeting } from '@/features/meeting-list/serverMeetingHistory'
 import { MoyangApiError } from '@/lib/moyang-api'
 import { maskMeetingText, phaseLabels } from './chatContent'
+import { ChatGuide } from './ChatGuide'
 import { drawingDuration, drawingGraceDuration, formatRemainingTime } from './chatTiming'
 import { readDrawingDraft } from './drawingDraft'
 import type { MeetingDrawingDraft } from './drawingDraft'
@@ -296,7 +299,7 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
   }
 
   return (
-    <div className={styles.shell}>
+    <div className={`${styles.shell} ${styles.serverChat}`}>
       <PageHeader title="모양 모임" action="back" onNavigate={back} />
       {!chat ? (
         error ? (
@@ -325,7 +328,7 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
       ) : (
         <>
           {chat.phase && (
-            <p className={styles.notice}>
+            <p className={styles.phaseNotice}>
               {phaseLabels[chat.phase]}
               {chat.topic && ` · ${maskMeetingText(chat.topic)}`}
             </p>
@@ -348,20 +351,28 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
           <div className={styles.messages} ref={messageList}>
             {chat.messages.map((message) => {
               const content = maskMeetingText(message.content ?? '')
-              const label =
-                message.type === 'SYSTEM' ? '모양 AI' : (message.senderNickname ?? '참여자')
+              const timestamp = (
+                <time className={styles.messageTime} dateTime={message.createdAt}>
+                  {time.format(new Date(message.createdAt))}
+                </time>
+              )
+              if (message.type === 'SYSTEM')
+                return (
+                  <ChatGuide key={message.messageId}>
+                    <p className={styles.bubble}>{content}</p>
+                    {timestamp}
+                  </ChatGuide>
+                )
               return (
                 <div
                   key={message.messageId}
-                  className={
-                    message.type === 'SYSTEM'
-                      ? styles.guide
-                      : `${styles.message} ${message.mine ? styles.mine : ''}`
-                  }
+                  className={`${styles.message} ${message.mine ? styles.mine : ''}`}
                 >
                   <div className={styles.messageBody}>
                     {!message.mine && (
-                      <span className={styles.nickname}>{maskMeetingText(label)}</span>
+                      <span className={styles.nickname}>
+                        {maskMeetingText(message.senderNickname ?? '참여자')}
+                      </span>
                     )}
                     {message.type === 'DRAWING' && message.imageUrl ? (
                       <button
@@ -369,15 +380,15 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
                         type="button"
                         onClick={() => setSelected(message)}
                       >
-                        <DrawingImage src={message.imageUrl} alt="공유한 그림" />
+                        <span className={styles.drawingPreview}>
+                          <DrawingImage src={message.imageUrl} alt="공유한 그림" />
+                        </span>
                         {content && <span>{content}</span>}
                       </button>
                     ) : (
                       <p className={styles.bubble}>{content}</p>
                     )}
-                    <time className={styles.messageTime} dateTime={message.createdAt}>
-                      {time.format(new Date(message.createdAt))}
-                    </time>
+                    {timestamp}
                   </div>
                 </div>
               )
@@ -397,7 +408,7 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
             </p>
           )}
           {active && chat.phase === 'DRAWING' && (
-            <p className={styles.notice} role="status">
+            <p className={styles.submissionNotice} role="status">
               그림 제출 {chat.submittedDrawingCount}/{chat.participantCount}명
             </p>
           )}
@@ -405,14 +416,18 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
             <div className={styles.drawingActions}>
               {!Number.isNaN(drawingRemaining) &&
                 (drawingRemaining > 0 ? (
-                  <span>그리기 남은 시간 {formatRemainingTime(drawingRemaining)}</span>
+                  <span className={styles.drawingTimer}>
+                    그리기 남은 시간 {formatRemainingTime(drawingRemaining)}
+                  </span>
                 ) : drawingRemaining + drawingGraceDuration > 0 ? (
-                  <span role="status">
+                  <span className={styles.drawingTimer} role="status">
                     그림 제출까지 {formatRemainingTime(drawingRemaining + drawingGraceDuration)} 더
                     기다릴게요.
                   </span>
                 ) : (
-                  <span role="status">모두 그림을 공유하면 다음 단계로 넘어가요.</span>
+                  <span className={styles.drawingTimer} role="status">
+                    모두 그림을 공유하면 다음 단계로 넘어가요.
+                  </span>
                 ))}
               <Link
                 to={`${path}/drawing/choose`}
@@ -451,13 +466,14 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
                 <textarea
                   aria-label="메시지 입력"
                   placeholder="메시지를 입력해 주세요"
+                  rows={1}
                   maxLength={500}
                   value={text}
                   onChange={(event) => setText(event.target.value)}
                   readOnly={pending}
                 />
-                <button type="submit" disabled={pending || !text.trim()}>
-                  전송
+                <button type="submit" aria-label="전송" disabled={pending || !text.trim()}>
+                  <FontAwesomeIcon icon={faArrowUp} aria-hidden="true" />
                 </button>
               </form>
             </>

@@ -142,6 +142,7 @@ const ScopedRecordDetailContent = ({
           />
           <ConversationMessages
             readOnly
+            scrollWithPage
             messages={(detail.messages ?? [])
               .filter((message) => message.role === 'USER' || message.role === 'ASSISTANT')
               .map((message) => ({
@@ -222,20 +223,32 @@ const ScopedRecordDetailContent = ({
   )
 }
 
-/** 최근 기록에서 진입하는 회고 상세 화면이다. */
+/** 홈과 최근 기록에서 진입하는 회고 상세 화면이다. */
 export const RecordDetail = () => {
   const { recordId = '' } = useParams()
   const { search, state } = useLocation()
   const navigate = useNavigate()
   const preview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
-  const record = (state as { record?: RecordItem } | null)?.record
+  const { from, record } = (state as { from?: 'home' | 'recent'; record?: RecordItem } | null) ?? {}
+  const goBack = () => {
+    if ((from === 'home' || from === 'recent') && window.history.state?.idx > 0) {
+      navigate(-1)
+      return
+    }
+
+    const params = new URLSearchParams()
+    if (preview) params.set('preview', '')
+    if (from === 'recent') params.set('tab', 'recent')
+    navigate(
+      { pathname: from === 'home' ? '/home' : '/records', search: params.toString() },
+      {
+        replace: true,
+      },
+    )
+  }
   return (
     <div className={styles.detailPage}>
-      <PageHeader
-        title="나의 그림 기록"
-        action="back"
-        onNavigate={() => navigate(`/records${preview ? '?preview' : ''}`)}
-      />
+      <PageHeader title="나의 그림 기록" action="back" onNavigate={goBack} />
       <RecordDetailContent key={recordId} recordId={recordId} preview={preview} record={record} />
     </div>
   )

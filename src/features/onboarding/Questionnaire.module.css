@@ -165,9 +165,33 @@
   }
 }
 @media (max-height: 700px) {
-  .content {
-    padding-top: 40px;
+  .progress {
+    height: 64px;
+    padding-top: 28px;
   }
+
+  .progress::before {
+    top: 46px;
+  }
+
+  .content {
+    padding-top: 28px;
+    padding-bottom: 12px;
+  }
+
+  .profile section {
+    margin-top: 24px;
+  }
+
+  .choices,
+  .choices.three {
+    gap: 10px;
+  }
+
+  .hint + .choices {
+    margin-top: 24px;
+  }
+
   .actions {
     margin-bottom: 24px;
   }

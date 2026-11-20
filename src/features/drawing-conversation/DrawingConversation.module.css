@@ -164,6 +164,11 @@
   padding: clamp(16px, 7.1dvh, 60px) 22px 20px;
 }
 
+.messages.scrollWithPage {
+  overflow-y: visible;
+  overscroll-behavior: auto;
+}
+
 .assistant,
 .user {
   display: flex;

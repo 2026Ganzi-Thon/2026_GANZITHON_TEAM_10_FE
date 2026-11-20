@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Modal, PageHeader } from '@/components'
 import { formatRemainingTime } from '@/features/meeting-chat/chatTiming'
@@ -22,6 +22,7 @@ import room from './MeetingWaitingRoom.module.css'
 
 type Action = 'join' | 'enter' | 'start' | 'cancel'
 const autoEnterRetryDelay = 3000
+const secondaryActionClass = `${detail.outline} ${detail.serverAction}`
 const dateFormat = new Intl.DateTimeFormat('ko-KR', {
   dateStyle: 'full',
   timeStyle: 'short',
@@ -39,6 +40,7 @@ export const ServerMeetingRoom = ({
 }) => {
   const location = useLocation()
   const navigate = useNavigate()
+  const nicknameId = useId()
   const listPath = getMeetingListPath(location.state?.meetingListSearch)
   const cancellationKey = JSON.stringify(['moyang:meeting-cancelled', scope, id])
   const [meeting, setMeeting] = useState<MeetingDetail>()
@@ -65,6 +67,10 @@ export const ServerMeetingRoom = ({
   const inWaiting = view === 'waiting'
   const joined = Boolean(meeting?.joined || meeting?.isHost)
   const scheduled = meeting?.type === 'SCHEDULED'
+  const detailTitle = meeting?.type === 'LIVE' ? '지금 모이는 모양' : '미리 약속한 모양'
+  const waitingTitle = scheduled ? '예약 모임 입장 안내' : '모임 대기실'
+  const categoryLabel = meetingConcerns.find(({ id: code }) => code === meeting?.category)?.label
+  const tags = [...new Set([categoryLabel, ...(meeting?.tags ?? [])])].filter(Boolean)
   const open = meeting?.status === 'RECRUITING' || meeting?.status === 'OPEN'
   const startAt = meeting?.startAt ? Date.parse(meeting.startAt) : null
   const enterAt = meeting?.enterOpenAt ? Date.parse(meeting.enterOpenAt) : Infinity
@@ -233,11 +239,11 @@ export const ServerMeetingRoom = ({
   return (
     <div className={inWaiting ? room.shell : detail.page}>
       <PageHeader
-        title={inWaiting ? '모임 대기실' : '미리 약속한 모양'}
+        title={inWaiting ? waitingTitle : detailTitle}
         action="back"
         onNavigate={() => returnToList()}
       />
-      <div className={inWaiting ? room.room : detail.body}>
+      <div className={inWaiting ? `${room.room} ${room.serverWaiting}` : detail.serverBody}>
         {!meeting ? (
           <div className={detail.loadState}>
             <p role={loadFailed ? 'alert' : 'status'}>
@@ -251,14 +257,9 @@ export const ServerMeetingRoom = ({
           <>
             <h2 className={detail.title}>{meeting.title}</h2>
             <div className={detail.tags}>
-              {[
-                meetingConcerns.find(({ id: code }) => code === meeting.category)?.label,
-                ...(meeting.tags ?? []),
-              ]
-                .filter(Boolean)
-                .map((tag, index) => (
-                  <span key={`${tag}:${index}`}>{tag}</span>
-                ))}
+              {tags.map((tag) => (
+                <span key={tag}>{tag}</span>
+              ))}
             </div>
             <p className={detail.description}>{meeting.description}</p>
             <p className={room.participantCount}>
@@ -322,16 +323,20 @@ export const ServerMeetingRoom = ({
               )}
               {open && !joined && !done && !applicationCancelled && (
                 <>
-                  <label className={room.nicknameField}>
-                    모임에서 사용할 닉네임
+                  <div className={room.joinNickname}>
+                    <label htmlFor={nicknameId}>모임에서 사용할 닉네임</label>
                     <input
                       className={room.nicknameInput}
+                      id={nicknameId}
+                      aria-describedby={`${nicknameId}-hint`}
                       value={nickname}
                       maxLength={15}
                       onChange={(event) => setNickname(event.target.value)}
-                      placeholder="비워 두면 내 양 닉네임을 사용해요"
                     />
-                  </label>
+                    <p className={room.nicknameHint} id={`${nicknameId}-hint`}>
+                      비워 두면 내 양 닉네임을 사용해요.
+                    </p>
+                  </div>
                   <Button
                     disabled={
                       Boolean(action) ||
@@ -375,11 +380,11 @@ export const ServerMeetingRoom = ({
                   </>
                 ) : (
                   <Link
-                    className={detail.reservationAction}
+                    className={secondaryActionClass}
                     to={`${path}/waiting`}
                     state={location.state}
                   >
-                    대기실로 이동
+                    입장 안내 보기
                   </Link>
                 ))}
               {open &&
@@ -397,14 +402,18 @@ export const ServerMeetingRoom = ({
                 ))}
               {canCancel && (
                 <Button
-                  className={detail.outline}
+                  className={secondaryActionClass}
                   disabled={Boolean(action) || !canAct}
                   onClick={() => setDialog('cancel')}
                 >
                   {meeting.isHost || scheduled ? '모임 취소하기' : '대기실 나가기'}
                 </Button>
               )}
-              <Link to={listPath} state={{ meetingListKey: location.state?.meetingListKey }}>
+              <Link
+                className={secondaryActionClass}
+                to={listPath}
+                state={{ meetingListKey: location.state?.meetingListKey }}
+              >
                 모임 목록으로 돌아가기
               </Link>
             </div>
