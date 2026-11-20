@@ -21,7 +21,7 @@
   max-height: max(80px, calc(100dvh - 380px));
   border-radius: 12px;
   background: var(--color-surface-gray);
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .canvasPreview {

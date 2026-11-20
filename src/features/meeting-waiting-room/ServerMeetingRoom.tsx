@@ -22,6 +22,7 @@ import room from './MeetingWaitingRoom.module.css'
 
 type Action = 'join' | 'enter' | 'start' | 'cancel'
 const autoEnterRetryDelay = 3000
+const secondaryActionClass = `${detail.outline} ${detail.serverAction}`
 const dateFormat = new Intl.DateTimeFormat('ko-KR', {
   dateStyle: 'full',
   timeStyle: 'short',
@@ -66,6 +67,10 @@ export const ServerMeetingRoom = ({
   const inWaiting = view === 'waiting'
   const joined = Boolean(meeting?.joined || meeting?.isHost)
   const scheduled = meeting?.type === 'SCHEDULED'
+  const detailTitle = meeting?.type === 'LIVE' ? '지금 모이는 모양' : '미리 약속한 모양'
+  const waitingTitle = scheduled ? '예약 모임 입장 안내' : '모임 대기실'
+  const categoryLabel = meetingConcerns.find(({ id: code }) => code === meeting?.category)?.label
+  const tags = [...new Set([categoryLabel, ...(meeting?.tags ?? [])])].filter(Boolean)
   const open = meeting?.status === 'RECRUITING' || meeting?.status === 'OPEN'
   const startAt = meeting?.startAt ? Date.parse(meeting.startAt) : null
   const enterAt = meeting?.enterOpenAt ? Date.parse(meeting.enterOpenAt) : Infinity
@@ -234,11 +239,11 @@ export const ServerMeetingRoom = ({
   return (
     <div className={inWaiting ? room.shell : detail.page}>
       <PageHeader
-        title={inWaiting ? '모임 대기실' : '미리 약속한 모양'}
+        title={inWaiting ? waitingTitle : detailTitle}
         action="back"
         onNavigate={() => returnToList()}
       />
-      <div className={inWaiting ? room.room : detail.serverBody}>
+      <div className={inWaiting ? `${room.room} ${room.serverWaiting}` : detail.serverBody}>
         {!meeting ? (
           <div className={detail.loadState}>
             <p role={loadFailed ? 'alert' : 'status'}>
@@ -252,14 +257,9 @@ export const ServerMeetingRoom = ({
           <>
             <h2 className={detail.title}>{meeting.title}</h2>
             <div className={detail.tags}>
-              {[
-                meetingConcerns.find(({ id: code }) => code === meeting.category)?.label,
-                ...(meeting.tags ?? []),
-              ]
-                .filter(Boolean)
-                .map((tag, index) => (
-                  <span key={`${tag}:${index}`}>{tag}</span>
-                ))}
+              {tags.map((tag) => (
+                <span key={tag}>{tag}</span>
+              ))}
             </div>
             <p className={detail.description}>{meeting.description}</p>
             <p className={room.participantCount}>
@@ -380,11 +380,11 @@ export const ServerMeetingRoom = ({
                   </>
                 ) : (
                   <Link
-                    className={detail.reservationAction}
+                    className={secondaryActionClass}
                     to={`${path}/waiting`}
                     state={location.state}
                   >
-                    대기실로 이동
+                    입장 안내 보기
                   </Link>
                 ))}
               {open &&
@@ -402,14 +402,18 @@ export const ServerMeetingRoom = ({
                 ))}
               {canCancel && (
                 <Button
-                  className={detail.outline}
+                  className={secondaryActionClass}
                   disabled={Boolean(action) || !canAct}
                   onClick={() => setDialog('cancel')}
                 >
                   {meeting.isHost || scheduled ? '모임 취소하기' : '대기실 나가기'}
                 </Button>
               )}
-              <Link to={listPath} state={{ meetingListKey: location.state?.meetingListKey }}>
+              <Link
+                className={secondaryActionClass}
+                to={listPath}
+                state={{ meetingListKey: location.state?.meetingListKey }}
+              >
                 모임 목록으로 돌아가기
               </Link>
             </div>

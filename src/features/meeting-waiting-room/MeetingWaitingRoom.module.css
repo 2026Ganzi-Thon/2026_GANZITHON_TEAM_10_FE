@@ -4,6 +4,16 @@
   padding: 12px clamp(20px, 8vw, 32px) 34px;
 }
 
+.serverWaiting {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  overflow-wrap: anywhere;
+}
+
+.serverWaiting > section {
+  margin-top: 4px;
+}
+
 .room h2,
 .room h3,
 .room p {

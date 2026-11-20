@@ -99,3 +99,22 @@
   font-size: var(--font-size-caption);
   text-underline-offset: 3px;
 }
+
+@media (max-height: 700px) {
+  .content {
+    padding: 18px 24px 16px;
+  }
+
+  .content h1 {
+    font-size: 22px;
+  }
+
+  .sheep {
+    height: clamp(90px, 20dvh, 150px);
+    margin: 14px auto 18px;
+  }
+
+  .actions {
+    margin-top: 12px;
+  }
+}

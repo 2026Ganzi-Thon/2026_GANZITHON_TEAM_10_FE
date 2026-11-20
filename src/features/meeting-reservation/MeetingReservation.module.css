@@ -256,6 +256,24 @@
   color: var(--color-primary);
 }
 
+.outline.serverAction {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  place-items: center;
+  padding: 8px 16px;
+  border-radius: 9px;
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  text-decoration: none;
+}
+
+.serverAction:focus-visible {
+  outline: 2px solid var(--color-black);
+  outline-offset: 2px;
+}
+
 .error {
   color: #b53535;
   font-size: var(--font-size-caption);
