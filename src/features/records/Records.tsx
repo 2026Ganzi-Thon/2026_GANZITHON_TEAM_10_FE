@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faBell,
@@ -29,11 +29,11 @@ const mockItems = (month: string): RecordItem[] =>
 
 /** 월별 달력과 최근 회고 목록을 조회한다. */
 export const Records = () => {
-  const { search } = useLocation()
-  const preview = import.meta.env.DEV && new URLSearchParams(search).has('preview')
-  const empty = preview && new URLSearchParams(search).get('preview') === 'empty'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const preview = import.meta.env.DEV && searchParams.has('preview')
+  const empty = preview && searchParams.get('preview') === 'empty'
+  const tab = searchParams.get('tab') === 'recent' ? 'recent' : 'calendar'
   const [month, setMonth] = useState(() => new Date(`${today()}T12:00:00`))
-  const [tab, setTab] = useState<'calendar' | 'recent'>('calendar')
   const [selected, setSelected] = useState<string | null>(null)
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null)
   const [calendar, setCalendar] = useState<RecordItem[] | null>(null)
@@ -102,6 +102,15 @@ export const Records = () => {
   useEffect(() => {
     if (showInlineDetail) pageRef.current?.scrollIntoView({ block: 'start' })
   }, [showInlineDetail])
+  const changeTab = (nextTab: typeof tab) => {
+    setError('')
+    if (nextTab === tab) return
+
+    const params = new URLSearchParams(searchParams)
+    if (nextTab === 'recent') params.set('tab', 'recent')
+    else params.delete('tab')
+    setSearchParams(params, { replace: true })
+  }
   const changeMonth = (amount: number) => {
     setCalendar(null)
     setCalendarError(false)
@@ -134,7 +143,7 @@ export const Records = () => {
         <li key={item.recordId}>
           <Link
             to={`/records/${item.recordId}${preview ? '?preview' : ''}`}
-            state={preview ? { record: item } : undefined}
+            state={{ from: 'recent', ...(preview && { record: item }) }}
             className={styles.card}
           >
             <div className={styles.thumbnail}>
@@ -167,21 +176,11 @@ export const Records = () => {
             <button
               role="tab"
               aria-selected={tab === 'calendar'}
-              onClick={() => {
-                setError('')
-                setTab('calendar')
-              }}
+              onClick={() => changeTab('calendar')}
             >
               다이어리
             </button>
-            <button
-              role="tab"
-              aria-selected={tab === 'recent'}
-              onClick={() => {
-                setError('')
-                setTab('recent')
-              }}
-            >
+            <button role="tab" aria-selected={tab === 'recent'} onClick={() => changeTab('recent')}>
               최근 기록
             </button>
           </div>
