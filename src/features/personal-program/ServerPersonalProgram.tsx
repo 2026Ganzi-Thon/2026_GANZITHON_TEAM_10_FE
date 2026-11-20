@@ -215,6 +215,7 @@ export const ServerPersonalProgram = ({
               isSetup={days.length === 0}
               firstReflection={reflection}
               concernId={shape.themeCode}
+              showFirstTopic={false}
             />
             {activityError && (
               <p role="alert" className={styles.error}>
