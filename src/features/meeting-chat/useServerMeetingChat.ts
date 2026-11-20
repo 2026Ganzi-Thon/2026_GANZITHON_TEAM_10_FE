@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { MoyangApiError } from '@/lib/moyang-api'
-import {
-  enterServerMeeting,
-  getServerMeeting,
-  getServerMeetingChat,
-} from '@/features/meeting-list/meetingApi'
+import { getServerMeeting, getServerMeetingChat } from '@/features/meeting-list/meetingApi'
 import type { MeetingChatData, MeetingDetail } from '@/features/meeting-list/meetingApi'
-import { rememberServerPastMeeting } from '@/features/meeting-list/serverMeetingHistory'
+import {
+  rememberServerPastMeeting,
+  trackServerMeeting,
+} from '@/features/meeting-list/serverMeetingHistory'
 
 export const useServerMeetingChat = (id: string, scope: string, enabled = true) => {
   const [chat, setChat] = useState<MeetingChatData>()
@@ -24,13 +23,7 @@ export const useServerMeetingChat = (id: string, scope: string, enabled = true) 
     const poll = async () => {
       try {
         const previous = latest.current
-        if (!previous) {
-          const room = await getServerMeeting(id, controller.signal)
-          meeting.current = room
-          if (room.type === 'SCHEDULED' && room.status === 'IN_PROGRESS') {
-            await enterServerMeeting(id, controller.signal)
-          }
-        }
+        if (!previous) meeting.current = await getServerMeeting(id, controller.signal)
         const afterId = previous?.messages.at(-1)?.messageId
         const next = await getServerMeetingChat(id, controller.signal, afterId)
         if (controller.signal.aborted) return
@@ -40,8 +33,13 @@ export const useServerMeetingChat = (id: string, scope: string, enabled = true) 
           ...next,
           messages: [...messages.values()].sort((a, b) => a.messageId - b.messageId),
         }
-        if (merged.status === 'ENDED' && previous?.status !== 'ENDED' && meeting.current) {
-          rememberServerPastMeeting(scope, id, meeting.current, merged)
+        if (meeting.current && String(meeting.current.meetingId) === id) {
+          if (merged.status === 'IN_PROGRESS' && previous?.status !== 'IN_PROGRESS') {
+            trackServerMeeting(scope, meeting.current)
+          }
+          if (merged.status === 'ENDED' && previous?.status !== 'ENDED') {
+            rememberServerPastMeeting(scope, meeting.current, merged)
+          }
         }
         latest.current = merged
         setChat(merged)

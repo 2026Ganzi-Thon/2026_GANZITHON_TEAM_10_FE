@@ -14,12 +14,14 @@ import {
   startServerMeeting,
 } from '@/features/meeting-list/meetingApi'
 import type { MeetingDetail } from '@/features/meeting-list/meetingApi'
+import { trackServerMeeting } from '@/features/meeting-list/serverMeetingHistory'
 import { MoyangApiError } from '@/lib/moyang-api'
 import applicationComplete from '@/assets/meeting-reservation/application-complete.png'
 import detail from '@/features/meeting-reservation/MeetingReservation.module.css'
 import room from './MeetingWaitingRoom.module.css'
 
 type Action = 'join' | 'enter' | 'start' | 'cancel'
+const autoEnterRetryDelay = 3000
 const dateFormat = new Intl.DateTimeFormat('ko-KR', {
   dateStyle: 'full',
   timeStyle: 'short',
@@ -49,6 +51,7 @@ export const ServerMeetingRoom = ({
   const [nickname, setNickname] = useState('')
   const [entered, setEntered] = useState(false)
   const [entryDenied, setEntryDenied] = useState(false)
+  const [autoEnterRetryAt, setAutoEnterRetryAt] = useState<number | null>(0)
   const [applicationCancelled, setApplicationCancelled] = useState(() => {
     try {
       return sessionStorage.getItem(cancellationKey) === '1'
@@ -58,7 +61,6 @@ export const ServerMeetingRoom = ({
   })
   const [now, setNow] = useState(Date.now)
   const request = useRef<AbortController | null>(null)
-  const autoEnter = useRef(false)
   const path = `/meetings/${encodeURIComponent(id)}`
   const inWaiting = view === 'waiting'
   const joined = Boolean(meeting?.joined || meeting?.isHost)
@@ -95,6 +97,9 @@ export const ServerMeetingRoom = ({
       try {
         const current = await getServerMeeting(id, controller.signal)
         if (controller.signal.aborted) return
+        if (scope && current.joined && current.status === 'IN_PROGRESS') {
+          trackServerMeeting(scope, current)
+        }
         setMeeting(current)
         setCheckedAttempt(attempt)
         setNow(Date.now())
@@ -115,7 +120,7 @@ export const ServerMeetingRoom = ({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [id, attempt])
+  }, [id, attempt, scope])
 
   useEffect(() => () => request.current?.abort(), [])
   useEffect(() => {
@@ -149,16 +154,19 @@ export const ServerMeetingRoom = ({
           }
           const { sheepUsed } = await joinServerMeeting(id, enteredNickname, signal)
           if (signal.aborted) return
+          if (scope) trackServerMeeting(scope, meeting)
           if (scheduled && sheepUsed > 0) setDialog('applied')
           break
         }
         case 'enter':
           await enterServerMeeting(id, signal)
           if (signal.aborted) return
+          if (scope) trackServerMeeting(scope, meeting)
           setEntered(true)
           break
         case 'start':
           await startServerMeeting(id, signal)
+          if (scope && !signal.aborted) trackServerMeeting(scope, meeting)
           break
         case 'cancel': {
           const refunded = await cancelServerMeeting(id, Boolean(meeting.isHost), signal)
@@ -172,6 +180,12 @@ export const ServerMeetingRoom = ({
       if (!signal.aborted) setAttempt((value) => value + 1)
     } catch (error) {
       if (signal.aborted) return
+      if (next === 'enter') {
+        const retryable =
+          error instanceof MoyangApiError &&
+          (error.status === undefined || error.status === 408 || error.status >= 500)
+        setAutoEnterRetryAt(retryable ? Date.now() + autoEnterRetryDelay : null)
+      }
       if (error instanceof MoyangApiError) {
         if (next === 'enter' && started && error.code === 'MEETING_NOT_JOINABLE')
           setEntryDenied(true)
@@ -192,15 +206,16 @@ export const ServerMeetingRoom = ({
     !dialog &&
     canAct &&
     (started || (startAt !== null && now >= startAt - 60_000))
-  const enterAutomatically = useEffectEvent(() => {
-    if (autoEnter.current) return
-    autoEnter.current = true
-    void run('enter')
-  })
+  const enterAutomatically = useEffectEvent(() => void run('enter'))
 
   useEffect(() => {
-    if (autoDue) enterAutomatically()
-  }, [autoDue])
+    if (!autoDue || autoEnterRetryAt === null) return
+    const timer = window.setTimeout(
+      () => enterAutomatically(),
+      Math.max(0, autoEnterRetryAt - Date.now()),
+    )
+    return () => window.clearTimeout(timer)
+  }, [autoDue, autoEnterRetryAt])
 
   if (joined && started && (!scheduled || entered) && !dialog)
     return <Navigate replace to={`${path}/chat`} state={location.state} />

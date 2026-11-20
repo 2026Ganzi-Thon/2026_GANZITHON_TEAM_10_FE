@@ -44,7 +44,8 @@ const ServerConversationPage = ({ scope }: { scope: string | null }) => {
   const location = useLocation()
   const navigate = useNavigate()
   const handoff = location.state as ConversationHandoff | null
-  const requestedDrawingId = Number(new URLSearchParams(location.search).get('drawingId'))
+  const params = new URLSearchParams(location.search)
+  const requestedDrawingId = Number(params.get('drawingId'))
   const drawingId =
     handoff?.drawing?.drawingId ??
     (Number.isSafeInteger(requestedDrawingId) && requestedDrawingId > 0
@@ -104,6 +105,17 @@ const ServerConversationPage = ({ scope }: { scope: string | null }) => {
     )
   if (data === null) return <Navigate replace to="/drawing" />
   if (!data) return <p role="status">그림 정보를 불러오고 있어요.</p>
+
+  if (requestedDrawingId !== data.drawing.drawingId) {
+    params.set('drawingId', String(data.drawing.drawingId))
+    return (
+      <Navigate
+        replace
+        to={{ search: params.toString(), hash: location.hash }}
+        state={location.state}
+      />
+    )
+  }
 
   return (
     <DrawingConversation

@@ -39,6 +39,8 @@ type Reply = {
   supportNotice: Notice | null
 }
 
+const aiQuestionTimeout = 40_000
+const aiResultTimeout = 80_000
 const path = (id: number | string) => `/api/conversations/${id}`
 const supportKey = (scope: string, id: string) => JSON.stringify(['moyang:support', scope, id])
 const drawingTitleKey = (scope: string, recordId: number) =>
@@ -186,6 +188,7 @@ export const startServerConversation = async (
     const data = await api.json<Start>('/api/conversations', {
       method: 'POST',
       data: { drawingId },
+      timeout: aiQuestionTimeout,
     })
     return {
       id: String(data.conversationId),
@@ -225,7 +228,11 @@ export const updateServerConversation = async (
   }
   if (action.type === 'END') {
     try {
-      await api.json(url, { method: 'PUT', data: { status: 'ENDED' } })
+      await api.json(url, {
+        method: 'PUT',
+        data: { status: 'ENDED' },
+        timeout: aiResultTimeout,
+      })
       return { ...current, status: 'ended' }
     } catch (error) {
       if (!(error instanceof MoyangApiError) || error.code !== 'CONVERSATION_ALREADY_ENDED')
@@ -239,7 +246,11 @@ export const updateServerConversation = async (
       : action.type === 'ANSWER'
         ? { type: action.type, content: action.text }
         : { type: action.type }
-  const reply = await api.json<Reply>(`${url}/messages`, { method: 'POST', data: body })
+  const reply = await api.json<Reply>(`${url}/messages`, {
+    method: 'POST',
+    data: body,
+    timeout: aiQuestionTimeout,
+  })
   const text = getReplyText(action)
   const messages = current.messages.slice()
   if (text) messages.push({ role: 'user', text })

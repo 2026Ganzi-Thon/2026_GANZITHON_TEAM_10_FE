@@ -54,6 +54,7 @@ export type MeetingListData = {
   meetings: Meeting[]
   myMeetings: Meeting[]
   pastMeetings: PastMeeting[]
+  recheckHistory?: boolean
 }
 
 const day = 86_400_000

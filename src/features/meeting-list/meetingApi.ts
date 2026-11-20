@@ -1,6 +1,13 @@
 import { MoyangApiError, moyangRequest } from '@/lib/moyang-api'
 import { getMockStorageScope } from '@/lib/mock-storage'
-import { readServerPastMeetings } from './serverMeetingHistory'
+import {
+  forgetTrackedServerMeeting,
+  readServerPastMeetings,
+  readTrackedServerMeetings,
+  rememberExpiredServerMeeting,
+  rememberServerPastMeeting,
+  trackServerMeeting,
+} from './serverMeetingHistory'
 import type { Meeting, MeetingConcern, MeetingListData } from './meetingMock'
 
 export type MeetingStatus = 'RECRUITING' | 'OPEN' | 'IN_PROGRESS' | 'ENDED' | 'CANCELED'
@@ -75,12 +82,69 @@ export const loadServerMeetings = async (
     api.json<{ meetings: Summary[] }>('/api/meetings/me'),
   ])
   const meetings = [...live.meetings, ...scheduled.meetings].map(mapMeeting)
-  const myMeetings = mine.meetings.map((meeting) => mapMeeting({ ...meeting, joined: true }))
+  const activeMine = mine.meetings.filter(
+    ({ status }) => status !== 'ENDED' && status !== 'CANCELED',
+  )
+  const myMeetings = activeMine.map((meeting) => mapMeeting({ ...meeting, joined: true }))
   const activeIds = new Set([...meetings, ...myMeetings].map(({ id }) => id))
+  const history = scope ? readServerPastMeetings(scope) : []
+  const pastMeetings = new Map(history.map((meeting) => [meeting.id, meeting]))
+  let recheckHistory = false
+  if (scope) {
+    activeMine.forEach((meeting) => trackServerMeeting(scope, meeting))
+    const pending = readTrackedServerMeetings(scope).filter(
+      ({ id }) => !activeIds.has(id) && !pastMeetings.has(id),
+    )
+    for (let index = 0; index < pending.length; index += 4) {
+      signal.throwIfAborted()
+      const batch = await Promise.all(
+        pending.slice(index, index + 4).map(async (meeting) => {
+          try {
+            const chat = await getServerMeetingChat(meeting.id, signal)
+            if (chat.status === 'CANCELED') {
+              forgetTrackedServerMeeting(scope, meeting.id)
+              return
+            }
+            const restored = rememberServerPastMeeting(scope, meeting, chat)
+            if (!restored) recheckHistory = true
+            return restored
+          } catch (error) {
+            if (error instanceof MoyangApiError && error.status === 403) {
+              forgetTrackedServerMeeting(scope, meeting.id)
+              return
+            }
+            if (!(error instanceof MoyangApiError) || error.code !== 'MEETING_NOT_FOUND') {
+              recheckHistory = true
+              return
+            }
+            try {
+              const reflection = await getMeetingReflection(meeting.id, signal)
+              if (String(reflection.meetingId) === meeting.id && reflection.drawing?.drawingId)
+                return rememberExpiredServerMeeting(scope, meeting)
+            } catch (error) {
+              if (error instanceof MoyangApiError && [403, 404].includes(error.status ?? 0)) {
+                forgetTrackedServerMeeting(scope, meeting.id)
+                return
+              }
+            }
+            recheckHistory = true
+          }
+        }),
+      )
+      batch.forEach((meeting) => {
+        if (meeting) pastMeetings.set(meeting.id, meeting)
+      })
+    }
+  }
+  signal.throwIfAborted()
+  if (scope !== getMockStorageScope()) throw new DOMException('Request cancelled', 'AbortError')
   return {
     meetings,
     myMeetings,
-    pastMeetings: scope ? readServerPastMeetings(scope).filter(({ id }) => !activeIds.has(id)) : [],
+    recheckHistory,
+    pastMeetings: [...pastMeetings.values()]
+      .filter(({ id }) => !activeIds.has(id))
+      .sort((left, right) => right.endAt - left.endAt),
   }
 }
 
@@ -167,6 +231,7 @@ export const endMeeting = (id: string, signal: AbortSignal) =>
   moyangRequest(signal).json(`${roomPath(id)}/end`, { method: 'POST' })
 
 export type MeetingReflection = {
+  meetingId: number
   recordId: number
   drawing: { drawingId: number; imageUrl: string; topicTitle: string }
   card: { todaysStory: string; whatISaid?: string; thoughts?: string }

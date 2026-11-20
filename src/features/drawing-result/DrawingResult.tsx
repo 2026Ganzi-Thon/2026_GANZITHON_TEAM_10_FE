@@ -160,10 +160,18 @@ export const DrawingResult = ({
     if (!serverId || typeof resultRecordId !== 'number') return
     const controller = new AbortController()
     moyangRequest(controller.signal)
-      .json(`/api/records/${resultRecordId}`)
+      .json<{ recordId: number; title: string | null }>(`/api/records/${resultRecordId}`)
       .then(
-        () => {
-          if (!controller.signal.aborted) setRecordSaved(true)
+        (record) => {
+          if (controller.signal.aborted || record?.recordId !== resultRecordId) return
+          setRecordSaved(true)
+          const title = record.title?.trim()
+          if (!title) return
+          setResult((current) =>
+            current?.recordId === resultRecordId && current.drawing.title !== title
+              ? { ...current, drawing: { ...current.drawing, title } }
+              : current,
+          )
         },
         () => {},
       )

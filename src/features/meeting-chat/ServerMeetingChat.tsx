@@ -57,6 +57,7 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
   const [now, setNow] = useState(Date.now)
   const mutation = useRef<AbortController | null>(null)
   const uploaded = useRef<{ draft: string; drawingId: number } | undefined>(undefined)
+  const lastSentTextId = useRef(0)
   const uncertainText = useRef<{ content: string; afterId: number } | undefined>(undefined)
   const messageList = useRef<HTMLDivElement>(null)
   const { chat, canSkip, error, refresh } = useServerMeetingChat(id, scope, !expired)
@@ -66,6 +67,7 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
   const historyRemaining = Math.min(deadline - now, pastConversationDuration)
   const showHistoryTimer = ended && Number.isFinite(deadline) && !expired
   const ownDrawing = chat?.messages.some((message) => message.mine && message.type === 'DRAWING')
+  const entryDenied = error instanceof MoyangApiError && error.code === 'NOT_PARTICIPANT'
   const lookupEndedDrawing =
     expired || (error instanceof MoyangApiError && error.code === 'MEETING_NOT_FOUND')
   const canViewReflection = Boolean(
@@ -156,18 +158,20 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
     const uncertain = uncertainText.current
     if (uncertain?.content === content) {
       const latest = await getServerMeetingChat(id, signal, uncertain.afterId || undefined)
-      if (
-        latest.messages.some(
-          (message) => message.mine && message.type === 'TEXT' && message.content === content,
-        )
-      ) {
+      const sent = latest.messages.findLast(
+        (message) => message.mine && message.type === 'TEXT' && message.content === content,
+      )
+      if (sent) {
+        lastSentTextId.current = sent.messageId
         uncertainText.current = undefined
         setText('')
         return
       }
     }
-    uncertainText.current = { content, afterId: chat?.messages.at(-1)?.messageId ?? 0 }
-    await sendMeetingMessage(id, signal, { type: 'TEXT', content })
+    const afterId = Math.max(lastSentTextId.current, chat?.messages.at(-1)?.messageId ?? 0)
+    uncertainText.current = { content, afterId }
+    const sent = await sendMeetingMessage(id, signal, { type: 'TEXT', content })
+    lastSentTextId.current = sent.messageId
     uncertainText.current = undefined
     setText('')
   }
@@ -298,14 +302,20 @@ export const ServerMeetingChat = ({ id, scope }: { id: string; scope: string }) 
         error ? (
           <Modal
             isOpen
-            title="대화를 불러오지 못했어요"
+            title={entryDenied ? '입장하지 않아 볼 수 없어요' : '대화를 불러오지 못했어요'}
             onClose={back}
-            actions={[
-              { label: '다시 시도', onClick: refresh },
-              { label: '목록으로', color: 'gray', onClick: back },
-            ]}
+            actions={
+              entryDenied
+                ? [{ label: '목록으로', onClick: back }]
+                : [
+                    { label: '다시 시도', onClick: refresh },
+                    { label: '목록으로', color: 'gray', onClick: back },
+                  ]
+            }
           >
-            {meetingApiMessage(error, '연결 상태를 확인하고 다시 시도해 주세요.')}
+            {entryDenied
+              ? '모임 대화는 입장한 참여자만 볼 수 있어요.'
+              : meetingApiMessage(error, '연결 상태를 확인하고 다시 시도해 주세요.')}
           </Modal>
         ) : (
           <p className={styles.notice} role="status">

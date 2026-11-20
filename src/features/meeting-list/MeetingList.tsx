@@ -391,7 +391,7 @@ const PastMeetingsSection = ({
       </div>
       {visible.length > 0 && (
         <p className={styles.pastDescription}>
-          {meetings.some(({ server }) => server) && '이 브라우저에서 종료를 확인한 모임이에요. '}
+          {meetings.some(({ server }) => server) && '이 브라우저에서 참여한 모임을 보여드려요. '}
           모임 종료 후 24시간 이내에 대화를 열람할 수 있어요.
         </p>
       )}
@@ -501,6 +501,7 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
 
   useEffect(() => {
     let active = true
+    let refreshTimer: number | undefined
 
     const controller = new AbortController()
     const loading = server
@@ -518,11 +519,19 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
         if (active) {
           setNow(Date.now())
           const created = getPreviewCreatedMeetings()
-          setList({
+          const next = {
             ...data,
             meetings: [...created, ...data.meetings],
             myMeetings: [...created, ...data.myMeetings],
-          })
+          }
+          setList((previous) =>
+            server && JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
+          )
+          if (server && tab === 'mine' && (data.myMeetings.length > 0 || data.recheckHistory)) {
+            refreshTimer = window.setTimeout(() => {
+              if (!document.hidden) setAttempt((value) => value + 1)
+            }, 6000)
+          }
         }
       },
       () => {
@@ -533,8 +542,9 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
     return () => {
       active = false
       controller.abort()
+      window.clearTimeout(refreshTimer)
     }
-  }, [scenario, attempt, concern, server])
+  }, [scenario, attempt, concern, server, tab])
 
   useEffect(() => {
     const refresh = (event: StorageEvent) => {
@@ -548,6 +558,15 @@ export const MeetingList = ({ getCreatePath }: { getCreatePath: () => string | u
     window.addEventListener('storage', refresh)
     return () => window.removeEventListener('storage', refresh)
   }, [server])
+
+  useEffect(() => {
+    if (!server || tab !== 'mine') return
+    const refresh = () => {
+      if (!document.hidden) setAttempt((value) => value + 1)
+    }
+    document.addEventListener('visibilitychange', refresh)
+    return () => document.removeEventListener('visibilitychange', refresh)
+  }, [server, tab])
 
   useEffect(() => {
     if (!list || list === 'error') return
